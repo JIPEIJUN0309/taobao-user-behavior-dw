@@ -1,0 +1,16 @@
+# 数据文件不入库 / do not commit data files
+*.csv
+*.tsv
+data/
+UserBehavior*
+
+# Docker volumes / logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# temp
+_run.sql
+/tmp/

@@ -1,0 +1,49 @@
+services:
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    ports:
+      - "9870:9870"   # HDFS Web UI
+      - "9000:9000"   # HDFS RPC
+    environment:
+      - CLUSTER_NAME=taobao
+    env_file:
+      - ./hadoop.env
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+      # 挂载本地数据目录, 容器直读, 避免 docker cp 大文件卡顿
+      # mount local data dir so container reads directly (no slow docker cp)
+      - D:/data/taobao_data/UserBehavior:/data
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    depends_on:
+      - namenode
+    env_file:
+      - ./hadoop.env
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+
+  hive:
+    image: apache/hive:4.0.0
+    container_name: hive
+    depends_on:
+      - namenode
+      - datanode
+    environment:
+      - SERVICE_NAME=hiveserver2
+      - HIVE_SERVER2_THRIFT_PORT=10000
+    ports:
+      - "10000:10000"   # HiveServer2 (beeline)
+      - "10002:10002"   # HiveServer2 Web UI
+    volumes:
+      - D:/data/taobao_data/UserBehavior:/data
+      # 持久化内嵌 Derby 元数据库, 重建容器不丢表定义 (踩坑教训)
+      # persist embedded Derby metastore so table defs survive container rebuild
+      - hive_metastore:/opt/hive/data/metastore_db
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode:
+  hive_metastore:
