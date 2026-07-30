@@ -4,6 +4,7 @@
 
 ![Hive](https://img.shields.io/badge/Hive-4.0-FDEE21?logo=apachehive&logoColor=black)
 ![Hadoop](https://img.shields.io/badge/Hadoop-3.2-66CCFF?logo=apachehadoop&logoColor=black)
+![Spark](https://img.shields.io/badge/Spark-PySpark-E25A1C?logo=apachespark&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![SQL](https://img.shields.io/badge/HiveSQL-ELT-4479A1)
 ![Data](https://img.shields.io/badge/Data-100M%20rows-brightgreen)
@@ -19,6 +20,7 @@
 - [Dataset](#dataset)
 - [Warehouse Layers](#warehouse-layers)
 - [Key Results](#key-results)
+- [Data Skew Study](#data-skew-study)
 - [Quick Start](#quick-start)
 - [Project Structure](#project-structure)
 - [Technical Highlights](#technical-highlights)
@@ -45,10 +47,10 @@ Everything runs locally through **Docker Compose**, so the entire environment is
 | Layer | Technology |
 |-------|-----------|
 | **Storage** | HDFS (Hadoop 3.2) |
-| **Compute** | Hive 4.0 on Tez |
+| **Compute** | Hive 4.0 on Tez · Spark / PySpark |
 | **File format** | ORC (columnar) + Snappy compression |
 | **Orchestration** | Docker Compose |
-| **Language** | HiveSQL |
+| **Language** | HiveSQL · Python |
 
 ---
 
@@ -107,6 +109,27 @@ Detected a **pre-promotion effect**: on Dec 2 (just before the "Double 12" sale)
 
 ---
 
+## Data Skew Study
+
+A tuning study layered on top of DWD. Profiling came first: this dataset is **not skewed** — the hottest item accounts for just **0.033%** of all rows, or 6.5% of an average partition. Rather than claim a problem that never occurred, a controlled skew scenario was constructed to validate the fixes.
+
+**Setup:** 30% of rows were rewritten to a single hot item, pushing that key to **23.07%** of the table — **46x** an average partition.
+
+| Strategy | Runtime | vs. Baseline | Accuracy |
+|----------|---------|--------------|----------|
+| `count` + `sum` (additive) | 12.3s | — *(control)* | Exact |
+| `countDistinct` baseline | 76.9s | 1.00x | Exact |
+| Two-phase dedup | 73.6s | 1.04x | Exact, zero diff |
+| **HLL approximation** | **44.1s** | **1.74x** | 0.60% mean error |
+
+> **Key finding:** even with a 23% hot key, `group by count` showed no skew at all — Shuffle Read Max/Median was just **1.03x**, because map-side combine compressed 128.6M rows down to 20.0M before the shuffle. Only the non-combinable `countDistinct` produced real skew (**6.3x** slower). Two-phase dedup removed that skew and matched results exactly, but added a full extra shuffle, so its net gain was only 4%. HLL won because mergeable sketches restore map-side combine, eliminating the skew and the shuffle overhead together.
+>
+> **Skew isn't fundamentally about uneven distribution — it's about uneven data that cannot be compressed before the shuffle.**
+
+Full write-up, including HLL's error characteristics and why salting doesn't apply to distinct aggregations: [`docs/data_skew.md`](docs/data_skew.md)
+
+---
+
 ## Quick Start
 
 ### Prerequisites
@@ -159,12 +182,15 @@ taobao-user-behavior-dw/
 │   │   └── ads_daily_conversion.sql     # Daily trend
 │   └── verify/
 │       └── verify_all.sql               # Verification queries
+├── spark/
+│   └── skew_experiment.py       # Controlled data-skew experiment (PySpark)
 ├── scripts/
 │   ├── load_to_hdfs.sh          # Load CSV into HDFS
 │   └── run_all.sh               # Run all layer SQL in order
 └── docs/
     ├── architecture.svg         # Architecture diagram
-    └── data_dictionary.md       # Full table schemas
+    ├── data_dictionary.md       # Full table schemas
+    └── data_skew.md             # Data-skew study write-up
 ```
 
 ---
@@ -182,6 +208,9 @@ Core techniques applied across the pipeline, each chosen to improve data quality
 | **Conditional aggregation** | `SUM(CASE WHEN ...)` computes multiple metrics in one scan | DWS / ADS |
 | **Anti-join** | `LEFT JOIN ... WHERE key IS NULL` finds "in A but not in B" | ADS |
 | **UNION ALL** | Merges two funnel definitions into one table | ADS |
+| **Map-side combine** | Additive aggregations merge locally before the shuffle — inherently skew-resistant | Skew study |
+| **Two-phase dedup** | Changes the shuffle key to spread a hot key; exact results | Skew study |
+| **HLL approximation** | Mergeable sketches restore map-side combine — **1.74x** speedup | Skew study |
 
 ---
 
@@ -202,6 +231,10 @@ Real problems encountered and fixed during development — the kind of debugging
 4. **Metastore data loss on container rebuild.**
    Rebuilding the Hive container deleted the embedded Derby metastore along with it, wiping all table definitions (the HDFS data survived). Fixed by **persisting the metastore to a Docker volume**.
    *Lesson: this is exactly why production metastores must live in dedicated, persistent storage.*
+
+5. **Built a hot key, measured no skew.**
+   After forcing one item to 23% of the table (46x an average partition), `group by count` still ran perfectly balanced — Shuffle Read Max/Median was **1.03**. The Spark UI revealed why: only 20M records crossed the shuffle, because map-side combine had already flattened the hot key. Skew appeared only after switching to the non-combinable `countDistinct`.
+   *Lesson: additive aggregations are inherently skew-resistant — what matters is whether a single key's absolute volume can be compressed before the shuffle, not the distribution ratio.*
 
 ---
 
