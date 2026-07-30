@@ -93,17 +93,17 @@ Computed with **two definitions** to avoid a common analytical trap:
 | Event count | 88.6M | 5.47M | 2.85M | 2.00M | **2.26%** |
 | Unique user | 984K | 737K | 388K | 670K | **68.12%** |
 
-> **Insight:** The two rates differ by ~30x. A single page-view converts at only 2.26%, yet **68% of active users eventually buy**. The takeaway: judge success by the long-term user journey, not single-event conversion. Choosing the right metric definition changes the business conclusion entirely.
+> **Insight:** The two rates differ by ~30x — a single page-view converts at only 2.26%, yet **68% of active users eventually buy**. Exposing both definitions lets analysts pick the right lens instead of drawing the wrong conclusion from a single number.
 
 ### 2. Cart-Not-Buy List (Re-marketing Targets)
 
 - **Size:** **4,981,518** high-intent records — users who added an item to cart but never purchased it.
 - **Method:** an **anti-join** (`cart` events `LEFT JOIN` `buy` events, keeping rows with no match).
-- **Value:** these users are one nudge away from converting — the highest-ROI audience for coupons and cart reminders.
+- **Value:** a ready-to-use segment for downstream re-marketing (coupons, reminders), delivered as a queryable table refreshed by the pipeline.
 
 ### 3. Daily Conversion Trend
 
-Detected a **pre-promotion effect**: on Dec 2 (just before the "Double 12" sale), traffic spiked +30% while conversion dropped to its lowest. Users browse and stockpile carts ahead of the sale, then convert on the day itself.
+Detected a **pre-promotion effect**: on Dec 2 (just before the "Double 12" sale), traffic spiked +30% while conversion dropped to its lowest. This pattern surfaces directly from the daily-partitioned ADS table.
 
 ---
 
@@ -171,7 +171,7 @@ taobao-user-behavior-dw/
 
 ## Technical Highlights
 
-These are the core techniques used — and common data-engineering topics.
+Core techniques applied across the pipeline, each chosen to improve data quality, query performance, or maintainability.
 
 | Technique | What it does | Where |
 |-----------|--------------|-------|
