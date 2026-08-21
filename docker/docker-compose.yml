@@ -1,3 +1,10 @@
+# 固定 project 名，不随所在目录名变化。
+# 否则 compose 会拿"compose 文件所在目录名"当 project 名（这里会变成 docker），
+# 一旦目录改名或移动，named volume 前缀就变了 —— 内嵌 Derby 元数据库对不上，
+# 表定义全部丢失，得从 ODS 重建一遍。
+# Pin the project name so it never follows the directory name.
+name: taobao-dw
+
 services:
   namenode:
     image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
