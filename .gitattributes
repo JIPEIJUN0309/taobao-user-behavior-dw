@@ -1,1 +1,9 @@
-*.sh text eol=lf
+# 进容器的文件必须是 LF：
+#   *.sh  —— CRLF 会让 shebang 变成 "#!/usr/bin/env bash\r"，报 bad interpreter
+#   *.env —— compose 的 env_file 可能把 \r 带进变量值，写进 core-site.xml 就是坏值
+#   *.yml / *.sql —— 统一，避免 diff 噪音
+*.sh   text eol=lf
+*.env  text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.sql  text eol=lf
