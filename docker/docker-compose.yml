@@ -1,11 +1,25 @@
-# 固定 project 名，不随所在目录名变化。
-# 否则 compose 会拿"compose 文件所在目录名"当 project 名（这里会变成 docker），
-# 一旦目录改名或移动，named volume 前缀就变了 —— 内嵌 Derby 元数据库对不上，
-# 表定义全部丢失，得从 ODS 重建一遍。
-# Pin the project name so it never follows the directory name.
+# ============================================================
+# 淘宝用户行为离线数仓 —— 单机 Docker 环境
+#
+# name 固定为 taobao-dw：compose 默认拿"compose 文件所在目录名"当 project 名，
+# 一旦目录改名或移动，named volume 前缀就变了，数据全部失联。这里锁死。
+#
+# 元数据库用真实 PostgreSQL 而非内嵌 Derby：Derby 单进程、无并发，且默认把
+# metastore_db 建在进程工作目录，容器重建即丢表定义。
+#
+# 启动 / start:
+#   docker compose -f docker/docker-compose.yml up -d --build
+# ============================================================
 name: taobao-dw
 
+# 让 Hive 的托管表落在 HDFS 而不是容器本地盘。
+# apache/hive 官方镜像不认 bde2020 那套 CORE_CONF_* 环境变量，
+# 不显式指定 warehouse 的话 fs.defaultFS 是 file:///，DWD/DWS/ADS 会写进
+# 容器可写层 —— 容器一删数据就没了。
+x-hive-warehouse: &warehouse hdfs://namenode:9000/user/hive/warehouse
+
 services:
+  # ---------- HDFS NameNode ----------
   namenode:
     image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
     container_name: namenode
@@ -18,10 +32,10 @@ services:
       - ./hadoop.env
     volumes:
       - hadoop_namenode:/hadoop/dfs/name
-      # 挂载本地数据目录, 容器直读, 避免 docker cp 大文件卡顿
-      # mount local data dir so container reads directly (no slow docker cp)
+      # 原始 CSV 挂进容器直读, 避免 docker cp 大文件卡顿
       - D:/data/taobao_data/UserBehavior:/data
 
+  # ---------- HDFS DataNode ----------
   datanode:
     image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
     container_name: datanode
@@ -32,31 +46,73 @@ services:
     volumes:
       - hadoop_datanode:/hadoop/dfs/data
 
-  hive:
-    image: apache/hive:4.0.0
-    container_name: hive
-    depends_on:
-      - namenode
-      - datanode
+  # ---------- Hive 元数据库 (真实 Postgres) ----------
+  metastore-db:
+    image: postgres:16
+    container_name: taobao-metastore-db
     environment:
-      - SERVICE_NAME=hiveserver2
-      - HIVE_SERVER2_THRIFT_PORT=10000
-    # Hive 容器同样需要 fs.defaultFS, 否则默认文件系统指向容器本地盘,
-    # 建外部表 / 读写 warehouse 时会找不到 HDFS
-    # Hive needs fs.defaultFS too, otherwise the default FS points at the
-    # container's local disk instead of HDFS
-    env_file:
-      - ./hadoop.env
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+      POSTGRES_DB: metastore
+    volumes:
+      - metastore_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive -d metastore"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------- Hive Metastore 服务 ----------
+  # 首次启动会自动 schematool -initSchema (因为没设 IS_RESUME)
+  hive-metastore:
+    build: ./hive
+    image: taobao-hive:4.0.0
+    container_name: hive-metastore
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      SERVICE_OPTS: >-
+        -Xmx1G
+        -Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver
+        -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://metastore-db:5432/metastore
+        -Djavax.jdo.option.ConnectionUserName=hive
+        -Djavax.jdo.option.ConnectionPassword=hive
+        -Dhive.metastore.warehouse.dir=hdfs://namenode:9000/user/hive/warehouse
     ports:
-      - "10000:10000"   # HiveServer2 (beeline)
-      - "10002:10002"   # HiveServer2 Web UI
+      - "9083:9083"
+    depends_on:
+      metastore-db:
+        condition: service_healthy
+      namenode:
+        condition: service_started
     volumes:
       - D:/data/taobao_data/UserBehavior:/data
-      # 持久化内嵌 Derby 元数据库, 重建容器不丢表定义 (踩坑教训)
-      # persist embedded Derby metastore so table defs survive container rebuild
-      - hive_metastore:/opt/hive/data/metastore_db
+
+  # ---------- HiveServer2 (beeline / JDBC 入口) ----------
+  # container_name 必须保持 hive —— scripts/run_all.sh 与 verify.sh 里是
+  # docker exec ... hive，改名会让脚本失效
+  hive:
+    build: ./hive
+    image: taobao-hive:4.0.0
+    container_name: hive
+    environment:
+      SERVICE_NAME: hiveserver2
+      IS_RESUME: "true"          # schema 已由 metastore 初始化, 这里别再 init
+      HIVE_SERVER2_THRIFT_PORT: 10000
+      SERVICE_OPTS: >-
+        -Xmx2G
+        -Dhive.metastore.uris=thrift://hive-metastore:9083
+        -Dhive.metastore.warehouse.dir=hdfs://namenode:9000/user/hive/warehouse
+    ports:
+      - "10000:10000"   # HiveServer2 Thrift (beeline)
+      - "10002:10002"   # HiveServer2 Web UI
+    depends_on:
+      hive-metastore:
+        condition: service_started
+    volumes:
+      - D:/data/taobao_data/UserBehavior:/data
 
 volumes:
-  hadoop_namenode:
-  hadoop_datanode:
-  hive_metastore:
+  hadoop_namenode:    # 已有 3.4G HDFS 数据, 沿用不动
+  hadoop_datanode:    # 同上
+  metastore_pg:       # 全新元数据库 (旧的 metastore_pgdata 是 PG13, 保留未动)

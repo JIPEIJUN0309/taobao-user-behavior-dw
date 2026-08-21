@@ -7,3 +7,7 @@
 *.yml  text eol=lf
 *.yaml text eol=lf
 *.sql  text eol=lf
+
+# 批处理必须是 CRLF，LF 会让某些 CMD 版本解析 goto/label 出错
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
