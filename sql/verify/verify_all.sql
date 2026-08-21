@@ -1,6 +1,9 @@
 -- =====================================================================
 -- 数据验证脚本 / Data verification queries
 -- 用于确认各层数据正确性 / verify data correctness across layers
+-- 用法 / usage:
+--   docker cp sql/verify/verify_all.sql hive:/tmp/_v.sql
+--   docker exec -it hive beeline -u jdbc:hive2://localhost:10000 -f /tmp/_v.sql
 -- =====================================================================
 
 -- ---------- DWD 验证 / DWD checks ----------
@@ -8,6 +11,9 @@ USE taobao_dwd;
 
 -- 查看所有分区 (应有9个) / show partitions (expect 9)
 SHOW PARTITIONS dwd_user_behavior;
+
+-- 抽样看字段是否转换正确 / sample rows to eyeball the derived columns
+SELECT * FROM dwd_user_behavior LIMIT 5;
 
 -- 每个分区行数 / row count per partition
 SELECT dt, COUNT(*) AS cnt
@@ -25,6 +31,9 @@ USE taobao_dws;
 
 SELECT COUNT(*) AS user_count FROM dws_user_summary;   -- expect ~987,984
 SELECT COUNT(*) AS item_count FROM dws_item_summary;   -- expect ~4,142,583
+
+-- 抽样看宽表结构 / sample rows of the wide table
+SELECT * FROM dws_user_summary LIMIT 5;
 
 -- Top10 购买用户 / top buyers
 SELECT user_id, pv_cnt, cart_cnt, fav_cnt, buy_cnt, active_days
