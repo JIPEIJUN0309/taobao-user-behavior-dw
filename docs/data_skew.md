@@ -85,34 +85,51 @@ A 10,743x ratio sounds extreme, yet the hottest key is only 0.033% of the table 
 即便构造了占比 23%、达平均分区 46 倍的热点 key,`group by count` 仍毫无倾斜(Shuffle Read Max/Median 仅 **1.03x**)——Spark 在 shuffle 前完成本地合并,1.286 亿行压缩至 1995 万条,热点 key 到下游只剩每个 map task 一条。
 Even with a 23% hot key, `group by count` showed no skew at all: Spark pre-aggregates before the shuffle, so the hot key arrives downstream as one row per map task.
 
-换成不可加的 `countDistinct`,倾斜立刻出现,耗时 **6.3 倍**。
-Switching to the non-combinable `countDistinct` made skew appear immediately — 6.3x slower.
+换成 `countDistinct` 后耗时变成 **6.3 倍**,但这不是倾斜(见第 3 点)。
+Switching to `countDistinct` made the job 6.3x slower — but not because of skew (see finding 3).
 
 > **倾斜的本质不是数据分布不均,而是不均的数据无法在 shuffle 前被压缩。**
 > Skew isn't fundamentally about uneven distribution — it's about uneven data that *cannot be compressed before the shuffle*.
 
-### 3. 优化本身有成本,必须实测 / Optimizations have costs — measure them
+### 3. 先看执行计划,再下结论 / Read the plan before naming the problem
 
 | 方案 / Strategy | shuffle 次数 / shuffles | shuffle key |
 |---|---|---|
-| `countDistinct` 基线 / baseline | 1 | `item_id`(倾斜 / skewed) |
+| `countDistinct` 基线 / baseline | **2** | `(item_id, user_id)` → `item_id` |
 | 两阶段去重 / two-phase dedup | **2** | `(item_id, user_id)` → `item_id` |
+| HLL 近似 / approximation | **1** | `item_id`(map 端先算草图 / sketches built map-side) |
 
-两阶段去重确实消除了倾斜、结果精确一致,但多付出一整次 shuffle,净收益仅 **4%**。
-Two-phase dedup removed the skew and matched results exactly, but added a full extra shuffle — net gain only 4%.
+Spark 的优化器已经把单个 `countDistinct` 拆成两阶段:第一次按 `(item_id, user_id)` shuffle,热点商品被 `user_id` 打散;第二次按 `item_id` shuffle,每个分区每个商品只发一条部分计数。所以 `countDistinct` 没有热点倾斜,手写两阶段得到的是同一个物理计划,只快 **4%**。
+Spark's optimizer already splits a single `countDistinct` into two stages: the first shuffle on `(item_id, user_id)` scatters the hot item across tasks, and the second on `item_id` carries one partial count per item per partition. So `countDistinct` is not skewed, and hand-written two-phase dedup produces the identical plan — only 4% faster.
 
-HLL 之所以胜出,是因为草图可合并让 map 端预聚合重新生效,**倾斜与 shuffle 开销同时消失**,而非拆东墙补西墙。
-HLL won because mergeable sketches restore map-side combine, eliminating both the skew and the shuffle overhead.
+`countDistinct` 比可加聚合慢 6.3 倍,慢在 shuffle 量:`(item_id, user_id)` 组合几乎不重复,map 端压不下去。
+It is 6.3x slower than the additive control because of shuffle volume: `(item_id, user_id)` pairs barely compress map-side.
+
+HLL 改变了执行计划:草图可以合并,map 端先做部分聚合,只需一次 shuffle,提速 **1.74x**。
+HLL is what changes the plan: mergeable sketches allow map-side partial aggregation and a single shuffle — 1.74x faster.
+
+```text
+# countDistinct(user_id) GROUP BY item_id — PySpark 4.0.1, AQE off (excerpt)
+HashAggregate(keys=[item_id], functions=[count(distinct user_id)])
++- Exchange hashpartitioning(item_id, 200)
+   +- HashAggregate(keys=[item_id], functions=[partial_count(distinct user_id)])
+      +- HashAggregate(keys=[item_id, user_id], functions=[])
+         +- Exchange hashpartitioning(item_id, user_id, 200)
+            +- HashAggregate(keys=[item_id, user_id], functions=[])
+```
 
 ---
 
 ## 补充:HLL 的误差特征 / Note on HLL Error
 
-平均误差 0.60%,但**最大误差达 66.7%** —— 出现在长尾小基数商品上(p50 仅 3 行,真实 UV=3 估成 5 即 66.7%),绝对误差其实只有 ±2。
-Mean error 0.60%, but max error reaches 66.7% on long-tail items with tiny cardinality — where absolute error is merely ±2.
+平均误差 0.60%,但**最大误差达 66.7%** —— 出现在长尾小基数商品上(p50 仅 3 行,真实 UV=3 估成 1 即 66.7%),绝对误差只有 2。
+Mean error 0.60%, but max error reaches 66.7% on long-tail items with tiny cardinality (a true UV of 3 estimated as 1) — an absolute error of just 2.
 
-> HLL 的精度保证针对**大基数**。适合热门商品 UV、全站 UV 这类统计;若需对长尾商品精确计数,应走两阶段去重。
-> HLL's accuracy guarantee targets large cardinalities; use two-phase dedup when exact long-tail counts matter.
+小基数时 HLL++ 用线性计数(看还有多少寄存器为空),哈希碰撞只会少估、不会多估。复核:100 万个真实 UV 都是 3 的分组,估计值为 3 的占 99.42%,为 2 的占 0.58%,为 1 的只有 1 组,没有高估。
+At small cardinalities HLL++ switches to linear counting (it counts empty registers), so hash collisions can only under-estimate. Check: across 1,000,000 groups with a true UV of 3, the estimate was 3 for 99.42%, 2 for 0.58%, and 1 for a single group — never above 3.
+
+> HLL 的精度保证针对**大基数**。适合热门商品 UV、全站 UV 这类统计;若需对长尾商品精确计数,就用精确的 `countDistinct`。
+> HLL's accuracy guarantee targets large cardinalities; use an exact `countDistinct` when exact long-tail counts matter.
 
 ---
 
@@ -121,8 +138,8 @@ Mean error 0.60%, but max error reaches 66.7% on long-tail items with tiny cardi
 `count(distinct)` **不可加** —— 加盐后各桶的局部去重数不能相加(同一 user 会落在多个桶里被重复计数)。
 `count(distinct)` is not additive: partial distinct counts across salt buckets cannot be summed, since the same user may appear in several buckets.
 
-加盐适用于 `count` / `sum` / `max` 这类**可加聚合**的倾斜场景;对去重类聚合,正确做法是换 shuffle key(两阶段去重)或换成可合并的草图(HLL)。
-Salting fits additive aggregations; for distinct-type aggregations, either change the shuffle key or switch to a mergeable sketch.
+加盐适用于 `count` / `sum` / `max` 这类**可加聚合**的倾斜场景;对去重类聚合,Spark 已经自动按 `(key, 去重列)` 两阶段执行,真正能改变执行计划的是可合并的草图(HLL)。
+Salting fits additive aggregations; for distinct aggregations Spark already plans two stages on `(key, distinct column)`, and what actually changes the plan is a mergeable sketch (HLL).
 
 ---
 
