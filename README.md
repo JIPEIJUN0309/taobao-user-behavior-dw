@@ -48,6 +48,7 @@ Everything runs locally through **Docker Compose**, so the entire environment is
 |-------|-----------|
 | **Storage** | HDFS (Hadoop 3.2) |
 | **Compute** | Hive 4.0 on Tez · Spark / PySpark |
+| **Metastore** | Standalone Hive Metastore service · PostgreSQL 16 |
 | **File format** | ORC (columnar) + Snappy compression |
 | **Orchestration** | Docker Compose |
 | **Language** | HiveSQL · Python |
@@ -122,9 +123,11 @@ A tuning study layered on top of DWD. Profiling came first: this dataset is **no
 | Two-phase dedup | 73.6s | 1.04x | Exact, zero diff |
 | **HLL approximation** | **44.1s** | **1.74x** | 0.60% mean error |
 
-> **Key finding:** even with a 23% hot key, `group by count` showed no skew at all — Shuffle Read Max/Median was just **1.03x**, because map-side combine compressed 128.6M rows down to 20.0M before the shuffle. Only the non-combinable `countDistinct` produced real skew (**6.3x** slower). Two-phase dedup removed that skew and matched results exactly, but added a full extra shuffle, so its net gain was only 4%. HLL won because mergeable sketches restore map-side combine, eliminating the skew and the shuffle overhead together.
+> **Key finding:** even with a 23% hot key, `group by count` showed no skew at all — Shuffle Read Max/Median was just **1.03x**, because map-side combine compressed 128.6M rows down to 20.0M before the shuffle.
 >
-> **Skew isn't fundamentally about uneven distribution — it's about uneven data that cannot be compressed before the shuffle.**
+> `countDistinct` was **6.3x** slower, but not because of the hot key. The physical plan shows that Spark already splits a single `countDistinct` into two stages: one shuffle on `(item_id, user_id)`, which scatters the hot item across tasks, then one on `item_id`, which carries a single partial count per item per partition. The cost is volume — `(item_id, user_id)` pairs barely compress map-side. Hand-written two-phase dedup produces the identical plan, which is why it gained only 4%. HLL is what changes the plan: mergeable sketches allow map-side partial aggregation and a single shuffle, 1.74x faster at 0.60% mean error.
+>
+> **Read the plan before naming the problem: a hot key only hurts when it cannot be compressed before the shuffle.**
 
 Full write-up, including HLL's error characteristics and why salting doesn't apply to distinct aggregations: [`docs/data_skew.md`](docs/data_skew.md)
 
@@ -140,9 +143,9 @@ Full write-up, including HLL's error characteristics and why salting doesn't app
 ### Run
 
 ```bash
-# 1. Start the stack (3 containers)
+# 1. Start the stack (5 containers: namenode, datanode, metastore-db, hive-metastore, hive)
 cd docker
-docker compose up -d
+docker compose up -d --build
 # Wait 60-90s for Hive to become ready
 
 # 2. Load the CSV into HDFS
@@ -158,6 +161,8 @@ docker exec -it hive beeline -u jdbc:hive2://localhost:10000 -f /tmp/verify_all.
 
 Web UIs: HDFS at `http://localhost:9870` · HiveServer2 at `http://localhost:10002`
 
+On Windows without WSL integration, use the matching `.cmd` scripts in `scripts/` (`load_to_hdfs.cmd`, `run_all.cmd`, `verify.cmd`).
+
 ---
 
 ## Project Structure
@@ -166,8 +171,9 @@ Web UIs: HDFS at `http://localhost:9870` · HiveServer2 at `http://localhost:100
 taobao-user-behavior-dw/
 ├── README.md
 ├── docker/
-│   ├── docker-compose.yml       # 3-container setup (persistent metastore)
-│   └── hadoop.env               # Hadoop configuration
+│   ├── docker-compose.yml       # 5 containers: HDFS x2, PostgreSQL, Hive Metastore, HiveServer2
+│   ├── hadoop.env               # Hadoop configuration
+│   └── hive/Dockerfile          # apache/hive:4.0.0 + PostgreSQL JDBC driver
 ├── sql/
 │   ├── 01_ods/
 │   │   └── ods_user_behavior.sql        # External source table
@@ -185,8 +191,9 @@ taobao-user-behavior-dw/
 ├── spark/
 │   └── skew_experiment.py       # Controlled data-skew experiment (PySpark)
 ├── scripts/
-│   ├── load_to_hdfs.sh          # Load CSV into HDFS
-│   └── run_all.sh               # Run all layer SQL in order
+│   ├── load_to_hdfs.sh / .cmd   # Load CSV into HDFS
+│   ├── run_all.sh / .cmd        # Run all layer SQL in order, stop on the first failure
+│   └── verify.sh / .cmd         # Run the verification queries
 └── docs/
     ├── architecture.svg         # Architecture diagram
     ├── data_dictionary.md       # Full table schemas
@@ -203,14 +210,15 @@ Core techniques applied across the pipeline, each chosen to improve data quality
 |-----------|--------------|-------|
 | **External table** | Dropping the table keeps the underlying data safe | ODS |
 | **Dynamic partition** | Auto-creates a partition per date from the data | DWD |
-| **ORC + compression** | Columnar storage, reads only needed columns, **14:1** ratio | DWD / DWS |
+| **ORC + compression** | Columnar storage, reads only needed columns; about **2.3:1** smaller than the raw CSV on HDFS | DWD / DWS |
+| **Remote metastore** | Table metadata in PostgreSQL behind a standalone Hive Metastore; managed tables pinned to HDFS | Environment |
 | **CTAS** | `CREATE TABLE AS SELECT` — build and load in one step | DWS / ADS |
 | **Conditional aggregation** | `SUM(CASE WHEN ...)` computes multiple metrics in one scan | DWS / ADS |
 | **Anti-join** | `LEFT JOIN ... WHERE key IS NULL` finds "in A but not in B" | ADS |
 | **UNION ALL** | Merges two funnel definitions into one table | ADS |
 | **Map-side combine** | Additive aggregations merge locally before the shuffle — inherently skew-resistant | Skew study |
-| **Two-phase dedup** | Changes the shuffle key to spread a hot key; exact results | Skew study |
-| **HLL approximation** | Mergeable sketches restore map-side combine — **1.74x** speedup | Skew study |
+| **Two-phase aggregation** | What Spark already plans for a single `countDistinct`: shuffle on `(item_id, user_id)`, then on `item_id` | Skew study |
+| **HLL approximation** | Mergeable sketches allow map-side partial aggregation and a single shuffle — **1.74x** speedup | Skew study |
 
 ---
 
@@ -218,9 +226,9 @@ Core techniques applied across the pipeline, each chosen to improve data quality
 
 Real problems encountered and fixed during development — the kind of debugging that happens in production.
 
-1. **Metastore kept crashing.**
-   The initial image ran a separate metastore container that died from a startup race condition. Switched to the single-container `apache/hive:4.0.0` image with an embedded metastore.
-   *Lesson: when a component keeps failing, swapping to a proven setup beats endless patching.*
+1. **Metastore kept crashing, then outgrew Derby.**
+   The first image (bde2020) ran a separate metastore container that died from a startup race condition, so I switched to the official `apache/hive:4.0.0` image with embedded Derby. Derby then became the limit: it allows only one session at a time and keeps `metastore_db` inside the container. The current setup runs a standalone Hive Metastore service on port 9083, backed by PostgreSQL 16, with HiveServer2 connecting to it through `hive.metastore.uris`.
+   *Lesson: get it working on a proven setup first, then replace the parts that will not hold up.*
 
 2. **Large-file transfer stalled the container.**
    `docker cp` on a 3.4 GB file froze the container. Switched to a **volume mount** so the container reads the local file directly — zero copy. This is also the standard way to handle large files in production.
@@ -229,12 +237,12 @@ Real problems encountered and fixed during development — the kind of debugging
    An external table's `location` written as a relative path was resolved against the local filesystem and failed. Fixed by using the full HDFS URI: `hdfs://namenode:9000/...`.
 
 4. **Metastore data loss on container rebuild.**
-   Rebuilding the Hive container deleted the embedded Derby metastore along with it, wiping all table definitions (the HDFS data survived). Fixed by **persisting the metastore to a Docker volume**.
-   *Lesson: this is exactly why production metastores must live in dedicated, persistent storage.*
+   Rebuilding the Hive container deleted the embedded Derby metastore along with it, wiping all table definitions (the HDFS data survived). The first fix persisted Derby to a Docker volume; the final fix moved the metadata into a dedicated PostgreSQL service with its own named volume, and pinned `hive.metastore.warehouse.dir` to `hdfs://namenode:9000/user/hive/warehouse` — without it, managed tables were written into the container's writable layer.
+   *Lesson: this is exactly why production metastores live in dedicated, persistent storage.*
 
 5. **Built a hot key, measured no skew.**
-   After forcing one item to 23% of the table (46x an average partition), `group by count` still ran perfectly balanced — Shuffle Read Max/Median was **1.03**. The Spark UI revealed why: only 20M records crossed the shuffle, because map-side combine had already flattened the hot key. Skew appeared only after switching to the non-combinable `countDistinct`.
-   *Lesson: additive aggregations are inherently skew-resistant — what matters is whether a single key's absolute volume can be compressed before the shuffle, not the distribution ratio.*
+   After forcing one item to 23% of the table (46x an average partition), `group by count` still ran perfectly balanced — Shuffle Read Max/Median was **1.03**. The Spark UI revealed why: only 20M records crossed the shuffle, because map-side combine had already flattened the hot key. `countDistinct` was 6.3x slower, but its physical plan showed two shuffles keyed on `(item_id, user_id)` and then `item_id`, so the hot key never landed on one task — the extra time was shuffle volume, not skew.
+   *Lesson: additive aggregations are inherently skew-resistant, and the physical plan, not the runtime alone, tells you whether a slow job is actually skewed.*
 
 ---
 
