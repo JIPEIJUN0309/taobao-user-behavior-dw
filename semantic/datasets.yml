@@ -1,0 +1,79 @@
+﻿version: 1
+# 数据集 = 可被指标绑定的表。grain 是这张表的粒度声明，join 路径也在这里一次性写死，
+# 查询者无法指定 join —— 让查询者指定 join 等于把口径错误外包出去。
+datasets:
+  - name: dwd_user_behavior
+    label: 用户行为明细
+    table: taobao_dwd.dwd_user_behavior
+    grain: [user_id, item_id, behavior_type, ts]
+    description: 一次行为一行，按 dt 分区，ORC 列存
+    columns:
+      - {name: user_id, type: bigint}
+      - {name: item_id, type: bigint}
+      - {name: category_id, type: bigint}
+      - {name: behavior_type, type: string}
+      - {name: ts, type: bigint}
+      - {name: behavior_time, type: string}
+      - {name: hour, type: int}
+      - {name: dt, type: string}
+    partition: {column: dt, format: "%Y-%m-%d"}
+    time_bounds: ["2017-11-25", "2017-12-03"]
+    dimensions: [dt, hour, behavior_type, category_id, user_tier]
+    joins:
+      - dimension: user_tier
+        table: taobao_dws.dim_user_tier
+        alias: d_user_tier
+        join_on: {user_id: user_id}
+        type: left
+    cost: high
+    engine: hive
+
+  - name: dws_user_summary
+    label: 用户汇总
+    table: taobao_dws.dws_user_summary
+    grain: [user_id]
+    description: 每用户一行，全期汇总
+    columns:
+      - {name: user_id, type: bigint}
+      - {name: pv_cnt, type: bigint}
+      - {name: cart_cnt, type: bigint}
+      - {name: fav_cnt, type: bigint}
+      - {name: buy_cnt, type: bigint}
+      - {name: active_days, type: bigint}
+      - {name: item_cnt, type: bigint}
+    partition: null
+    time_bounds: null
+    dimensions: [user_tier]
+    joins:
+      - dimension: user_tier
+        table: taobao_dws.dim_user_tier
+        alias: d_user_tier
+        join_on: {user_id: user_id}
+        type: left
+    cost: medium
+    engine: pg
+
+  - name: dws_item_summary
+    label: 商品汇总
+    table: taobao_dws.dws_item_summary
+    grain: [item_id]
+    description: 每商品一行，全期汇总；注意 user_cnt 是每商品去重用户数，不可跨商品相加
+    columns:
+      - {name: item_id, type: bigint}
+      - {name: category_id, type: bigint}
+      - {name: pv_cnt, type: bigint}
+      - {name: cart_cnt, type: bigint}
+      - {name: fav_cnt, type: bigint}
+      - {name: buy_cnt, type: bigint}
+      - {name: user_cnt, type: bigint}
+    partition: null
+    time_bounds: null
+    dimensions: [category_id, item_tier]
+    joins:
+      - dimension: item_tier
+        table: taobao_dws.dim_item_tier
+        alias: d_item_tier
+        join_on: {item_id: item_id}
+        type: left
+    cost: medium
+    engine: pg

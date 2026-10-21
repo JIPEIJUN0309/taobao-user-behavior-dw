@@ -1,0 +1,90 @@
+# 编译器回归用例。改字典或改编译器后跑 `python -m pytest semantic/tests -q`。
+# 允许编译的用例会与 golden/*.sql 逐字节比对；报错用例只断言错误码与 action。
+compile:
+  - name: rate_by_day
+    dsl:
+      metrics: [buy_pv_rate]
+      dimensions: [dt]
+      time_range: {start: 2017-11-25, end: 2017-12-03}
+      order_by: [{field: dt, dir: asc}]
+
+  - name: count_with_filter
+    dsl:
+      metrics: [pv_cnt, cart_cnt]
+      dimensions: [dt]
+      filters: [{field: behavior_type, op: "=", value: pv}]
+      time_range: {start: 2017-11-25, end: 2017-12-03}
+      limit: 100
+
+  - name: join_dimension
+    dsl:
+      metrics: [active_uv]
+      dimensions: [user_tier]
+      time_range: {start: 2017-11-25, end: 2017-12-03}
+
+  - name: ratio_on_summary
+    dsl:
+      metrics: [category_conv_rate]
+      dimensions: [category_id]
+      order_by: [{field: category_conv_rate, dir: desc}]
+      limit: 5
+
+  - name: share_by_behavior
+    dsl:
+      metrics: [behavior_share]
+      dimensions: [dt, behavior_type]
+      time_range: {start: 2017-11-25, end: 2017-12-03}
+
+  - name: dod_rate
+    dsl:
+      metrics: [day_over_day]
+      dimensions: [dt]
+      time_range: {start: 2017-11-27, end: 2017-12-03}
+
+  - name: cohort_retention
+    dsl:
+      metrics: [retention_d1]
+      time_range: {start: 2017-11-25, end: 2017-12-02}
+
+  - name: default_window
+    dsl:
+      metrics: [pv_per_user]
+      dimensions: [dt]
+
+errors:
+  - name: unknown_metric
+    dsl: {metrics: [gmv]}
+    error: E_UNKNOWN_METRIC
+  - name: unknown_dimension
+    dsl: {metrics: [buy_pv_rate], dimensions: [brand]}
+    error: E_UNKNOWN_DIMENSION
+  - name: dimension_not_available
+    dsl: {metrics: [repurchase_uv], dimensions: [dt]}
+    error: E_DIM_NOT_AVAILABLE
+  - name: multi_dataset
+    dsl: {metrics: [pv_cnt, repurchase_uv]}
+    error: E_MULTI_DATASET
+  - name: invalid_enum
+    dsl: {metrics: [pv_cnt], filters: [{field: behavior_type, op: "=", value: click}]}
+    error: E_INVALID_ENUM
+  - name: time_out_of_range
+    dsl: {metrics: [pv_cnt], time_range: {start: 2017-01-01, end: 2017-12-03}}
+    error: E_TIME_OUT_OF_RANGE
+  - name: time_on_summary_table
+    dsl: {metrics: [repurchase_uv], time_range: {start: 2017-11-25, end: 2017-12-03}}
+    error: E_TIME_NOT_SUPPORTED
+  - name: limit_exceeded
+    dsl: {metrics: [pv_cnt], limit: 5000}
+    error: E_LIMIT_EXCEEDED
+  - name: share_without_split
+    dsl: {metrics: [behavior_share], dimensions: [dt]}
+    error: E_DIM_REQUIRED
+  - name: dod_without_dt
+    dsl: {metrics: [day_over_day]}
+    error: E_DIM_REQUIRED
+  - name: mixed_kinds
+    dsl: {metrics: [buy_pv_rate, day_over_day], dimensions: [dt]}
+    error: E_MIXED_KINDS
+  - name: unknown_filter_field
+    dsl: {metrics: [repurchase_uv], filters: [{field: dt, op: "=", value: "2017-11-25"}]}
+    error: E_UNKNOWN_FILTER_FIELD

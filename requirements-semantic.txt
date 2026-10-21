@@ -1,0 +1,8 @@
+# 指标语义层依赖（与数仓本身无关，可单独安装）
+pyyaml>=6.0
+pydantic>=2.5
+pytest>=8.0
+pandas>=2.0
+duckdb>=1.0
+jieba>=0.42
+rank-bm25>=0.2

@@ -1,0 +1,283 @@
+version: 1
+owner: jipeijun
+# 指标字典 = 唯一口径来源。每条指标绑定一个 dataset（决定粒度与去重方式），
+# 声明可用维度与依赖列，编译期会逐条校验。
+#
+# kind:
+#   additive  行级聚合，expr 是一个聚合表达式
+#   ratio     numerator / denominator，先各自聚合再相除（禁止先除后聚合）
+#   cohort    需要跨日期自连接的指标（如次日留存）
+#   derived   基于另一个指标做的派生：op=dod（环比）/ share（占比）
+#
+# multiplier: 输出前乘的系数。比率类统一 100，表示输出百分数。
+metrics:
+  # ---------------- 规模类 ----------------
+  - name: pv_cnt
+    label: 浏览次数
+    synonyms: [浏览次数, 浏览量, PV, pv数, 浏览数]
+    definition: 行为类型为 pv 的事件数
+    kind: additive
+    dataset: dwd_user_behavior
+    columns: [behavior_type]
+    expr: "SUM(CASE WHEN t.behavior_type = 'pv' THEN 1 ELSE 0 END)"
+    unit: count
+    dimensions: [dt, hour, category_id, user_tier]
+    version: 1
+    sample_questions: [每天的浏览次数, 某个类目的浏览量]
+
+  - name: cart_cnt
+    label: 加购次数
+    synonyms: [加购次数, 加购数, 购物车数]
+    definition: 行为类型为 cart 的事件数
+    kind: additive
+    dataset: dwd_user_behavior
+    columns: [behavior_type]
+    expr: "SUM(CASE WHEN t.behavior_type = 'cart' THEN 1 ELSE 0 END)"
+    unit: count
+    dimensions: [dt, hour, category_id, user_tier]
+    version: 1
+
+  - name: fav_cnt
+    label: 收藏次数
+    synonyms: [收藏次数, 收藏数]
+    definition: 行为类型为 fav 的事件数
+    kind: additive
+    dataset: dwd_user_behavior
+    columns: [behavior_type]
+    expr: "SUM(CASE WHEN t.behavior_type = 'fav' THEN 1 ELSE 0 END)"
+    unit: count
+    dimensions: [dt, hour, category_id, user_tier]
+    version: 1
+
+  - name: buy_cnt
+    label: 购买次数
+    synonyms: [购买次数, 成交次数, 订单数]
+    definition: 行为类型为 buy 的事件数
+    kind: additive
+    dataset: dwd_user_behavior
+    columns: [behavior_type]
+    expr: "SUM(CASE WHEN t.behavior_type = 'buy' THEN 1 ELSE 0 END)"
+    unit: count
+    dimensions: [dt, hour, category_id, user_tier]
+    version: 1
+
+  - name: behavior_cnt
+    label: 行为总量
+    synonyms: [行为数, 行为总量, 事件数]
+    definition: 全部行为事件数
+    kind: additive
+    dataset: dwd_user_behavior
+    columns: []
+    expr: "COUNT(1)"
+    unit: count
+    dimensions: [dt, hour, behavior_type, category_id, user_tier]
+    version: 1
+
+  # ---------------- 用户类 ----------------
+  - name: active_uv
+    label: 活跃用户数
+    synonyms: [活跃用户, UV, 活跃人数, 日活]
+    definition: 当天有任意行为的去重用户数
+    kind: additive
+    dataset: dwd_user_behavior
+    columns: [user_id]
+    expr: "COUNT(DISTINCT t.user_id)"
+    unit: count
+    dimensions: [dt, hour, user_tier]
+    version: 1
+
+  - name: buy_uv
+    label: 购买用户数
+    synonyms: [购买用户, 成交用户, 下单用户]
+    definition: 当天有购买行为的去重用户数
+    kind: additive
+    dataset: dwd_user_behavior
+    columns: [user_id, behavior_type]
+    expr: "COUNT(DISTINCT CASE WHEN t.behavior_type = 'buy' THEN t.user_id END)"
+    unit: count
+    dimensions: [dt, category_id, user_tier]
+    version: 1
+
+  - name: repurchase_uv
+    label: 复购用户数
+    synonyms: [复购用户, 复购人数, 二次购买用户]
+    definition: 全期购买次数 >= 2 的用户数（用户粒度，非事件粒度）
+    kind: additive
+    dataset: dws_user_summary
+    columns: [buy_cnt]
+    expr: "SUM(CASE WHEN t.buy_cnt >= 2 THEN 1 ELSE 0 END)"
+    unit: count
+    dimensions: [user_tier]
+    version: 1
+    sample_questions: [复购用户有多少, 高活跃用户的复购人数]
+
+  # ---------------- 强度类 ----------------
+  - name: pv_per_user
+    label: 人均浏览次数
+    synonyms: [人均浏览, 人均PV]
+    definition: 浏览次数 / 活跃用户数
+    kind: ratio
+    dataset: dwd_user_behavior
+    columns: [behavior_type, user_id]
+    numerator: "SUM(CASE WHEN t.behavior_type = 'pv' THEN 1 ELSE 0 END)"
+    denominator: "COUNT(DISTINCT t.user_id)"
+    unit: times
+    dimensions: [dt, category_id, user_tier]
+    version: 1
+
+  - name: purchase_frequency
+    label: 人均购买次数
+    synonyms: [人均购买, 购买频次]
+    definition: 购买次数 / 购买用户数
+    kind: ratio
+    dataset: dwd_user_behavior
+    columns: [behavior_type, user_id]
+    numerator: "SUM(CASE WHEN t.behavior_type = 'buy' THEN 1 ELSE 0 END)"
+    denominator: "COUNT(DISTINCT CASE WHEN t.behavior_type = 'buy' THEN t.user_id END)"
+    unit: times
+    dimensions: [dt, category_id, user_tier]
+    version: 1
+
+  - name: active_days_avg
+    label: 人均活跃天数
+    synonyms: [人均活跃天数, 活跃天数]
+    definition: 每用户活跃天数的均值（用户粒度）
+    kind: additive
+    dataset: dws_user_summary
+    columns: [active_days]
+    expr: "ROUND(AVG(t.active_days), 2)"
+    unit: days
+    dimensions: [user_tier]
+    version: 1
+
+  - name: item_touch_avg
+    label: 人均互动商品数
+    synonyms: [人均互动商品, 互动商品数]
+    definition: 每用户互动过的去重商品数的均值
+    kind: additive
+    dataset: dws_user_summary
+    columns: [item_cnt]
+    expr: "ROUND(AVG(t.item_cnt), 2)"
+    unit: items
+    dimensions: [user_tier]
+    version: 1
+
+  # ---------------- 转化类 ----------------
+  - name: pv_to_cart_rate
+    label: 浏览加购转化率
+    synonyms: [浏览加购率, 加购转化率, 加购率]
+    definition: 有加购行为的用户数 / 有浏览行为的用户数（用户去重口径）
+    kind: ratio
+    dataset: dwd_user_behavior
+    columns: [behavior_type, user_id]
+    numerator: "COUNT(DISTINCT CASE WHEN t.behavior_type = 'cart' THEN t.user_id END)"
+    denominator: "COUNT(DISTINCT CASE WHEN t.behavior_type = 'pv' THEN t.user_id END)"
+    multiplier: 100
+    unit: percent
+    dimensions: [dt, category_id, user_tier]
+    version: 1
+    sample_questions: [浏览加购转化率是多少, 每天的加购率]
+
+  - name: cart_to_buy_rate
+    label: 加购购买转化率
+    synonyms: [加购购买率, 加购成交率]
+    definition: 有购买行为的用户数 / 有加购行为的用户数（用户去重口径）
+    kind: ratio
+    dataset: dwd_user_behavior
+    columns: [behavior_type, user_id]
+    numerator: "COUNT(DISTINCT CASE WHEN t.behavior_type = 'buy' THEN t.user_id END)"
+    denominator: "COUNT(DISTINCT CASE WHEN t.behavior_type = 'cart' THEN t.user_id END)"
+    multiplier: 100
+    unit: percent
+    dimensions: [dt, category_id, user_tier]
+    version: 1
+
+  - name: buy_pv_rate
+    label: 浏览购买转化率
+    synonyms: [转化率, 购买转化率, 下单率, 成交率]
+    definition: 有购买行为的用户数 / 有浏览行为的用户数（用户去重口径）
+    kind: ratio
+    dataset: dwd_user_behavior
+    columns: [behavior_type, user_id]
+    numerator: "COUNT(DISTINCT CASE WHEN t.behavior_type = 'buy' THEN t.user_id END)"
+    denominator: "COUNT(DISTINCT CASE WHEN t.behavior_type = 'pv' THEN t.user_id END)"
+    multiplier: 100
+    unit: percent
+    dimensions: [dt, category_id, user_tier]
+    version: 1
+    sample_questions: [整体转化率, 每天的购买转化率, 高活跃用户的转化率]
+
+  - name: category_conv_rate
+    label: 类目转化率
+    synonyms: [类目转化率, 品类转化率]
+    definition: 加总购买次数 / 加总浏览次数（次数口径，商品粒度求和，与用户口径不同）
+    kind: ratio
+    dataset: dws_item_summary
+    columns: [buy_cnt, pv_cnt]
+    numerator: "SUM(t.buy_cnt)"
+    denominator: "SUM(t.pv_cnt)"
+    multiplier: 100
+    unit: percent
+    dimensions: [category_id, item_tier]
+    version: 1
+    sample_questions: [类目转化率排名, 各品类成交转化]
+
+  - name: item_cart_rate
+    label: 商品加购率
+    synonyms: [加购率-商品, 商品加购率]
+    definition: 加总加购次数 / 加总浏览次数（次数口径，商品粒度求和）
+    kind: ratio
+    dataset: dws_item_summary
+    columns: [cart_cnt, pv_cnt]
+    numerator: "SUM(t.cart_cnt)"
+    denominator: "SUM(t.pv_cnt)"
+    multiplier: 100
+    unit: percent
+    dimensions: [category_id, item_tier]
+    version: 1
+
+  # ---------------- 留存类 ----------------
+  - name: retention_d1
+    label: 次日留存率
+    synonyms: [次日留存, 留存率, 次日留存率]
+    definition: 当日活跃且次日仍活跃的用户数 / 当日活跃用户数
+    kind: cohort
+    dataset: dwd_user_behavior
+    columns: [user_id, dt]
+    multiplier: 100
+    unit: percent
+    dimensions: [dt]
+    version: 1
+    sample_questions: [次日留存率是多少, 每天的留存]
+
+  # ---------------- 派生类 ----------------
+  - name: behavior_share
+    label: 行为结构占比
+    synonyms: [行为占比, 行为结构, 各行为占比]
+    definition: 某一行为类型的事件数 / 同时段全部行为事件数
+    kind: derived
+    op: share
+    base: behavior_cnt
+    split_dimension: behavior_type
+    dataset: dwd_user_behavior
+    columns: []
+    multiplier: 100
+    unit: percent
+    dimensions: [dt, behavior_type]
+    version: 1
+    sample_questions: [各行为类型的占比, 每天的行为结构]
+
+  - name: day_over_day
+    label: 转化率日环比
+    synonyms: [日环比, 环比, 转化率变化]
+    definition: 当日浏览购买转化率相对前一日的百分比变化
+    kind: derived
+    op: dod
+    base: buy_pv_rate
+    dataset: dwd_user_behavior
+    columns: []
+    multiplier: 100
+    unit: percent
+    dimensions: [dt]
+    version: 1
+    sample_questions: [转化率的日环比, 哪天转化率涨得最多]

@@ -1,0 +1,49 @@
+version: 1
+# 维度是「可以怎么切」。枚举维度的取值在这里穷举，任何超出取值范围的过滤都会被编译期拒绝。
+dimensions:
+  - name: dt
+    label: 日期
+    column: dt
+    kind: date
+    format: "%Y-%m-%d"
+    description: 日期分区，2017-11-25 至 2017-12-03 共 9 天
+
+  - name: hour
+    label: 小时
+    column: hour
+    kind: int
+    min: 0
+    max: 23
+    description: 行为发生的小时（0-23）
+
+  - name: behavior_type
+    label: 行为类型
+    column: behavior_type
+    kind: enum
+    values: [pv, cart, fav, buy]
+    value_labels: {pv: 浏览, cart: 加购, fav: 收藏, buy: 购买}
+
+  - name: category_id
+    label: 商品类目
+    column: category_id
+    kind: enum
+    values: []
+    description: 类目 ID 数量多，不穷举；过滤时按整数处理
+
+  - name: user_tier
+    label: 用户活跃分层
+    column: user_tier
+    kind: enum
+    values: [low, mid, high]
+    value_labels: {low: 低活跃, mid: 中活跃, high: 高活跃}
+    source_table: taobao_dws.dim_user_tier
+    description: 按全期浏览次数分档：>=50 高、>=10 中、其余低
+
+  - name: item_tier
+    label: 商品成交分层
+    column: item_tier
+    kind: enum
+    values: [none, low, mid, high]
+    value_labels: {none: 无成交, low: 低成交, mid: 中成交, high: 高成交}
+    source_table: taobao_dws.dim_item_tier
+    description: 按全期成交次数分档：>=10 高、>=1 中、0 无成交
