@@ -1,4 +1,4 @@
-# 指标语义层与问数 Agent · 改进方案
+﻿# 指标语义层与问数 Agent · 改进方案
 
 > 在现有淘宝用户行为数仓之上，增加一层「受约束的指标语言」，让自然语言问数变成**确定性的 SQL 编译**，而不是让模型自由发挥。
 
@@ -20,7 +20,7 @@
 | D1 字典 | ✅ | 20 指标 / 6 维度 / 3 数据集 |
 | D2 校验 | ✅ | C0–C5 启动校验；9 个错误码，每个带 `repair/clarify/refuse` |
 | D3 编译器 | ✅ | 4 种 kind；28 份 SQL 快照逐字节锁定 |
-| D4 测试与 CLI | ✅ | 51 条语义层测试；`python -m semantic validate / metrics / compile` |
+| D4 测试与 CLI | ✅ | 50 条语义层测试；`python -m semantic validate / metrics / compile` |
 | D5 双路由 | ✅ | 同步 4 张服务层表 1026 万行；PG 与 DuckDB 结果 10/10 一致 |
 | D6–D7 Agent | ✅ | 三态输出 + 结构化修复（≤2 次）；19 条离线测试 |
 | D8 评测集 | ✅ | 60 条（A25/B15/C10/D10）；L1 40/40 可编译可执行 |

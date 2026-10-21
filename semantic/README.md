@@ -1,4 +1,4 @@
-# 指标语义层 / Semantic Layer
+﻿# 指标语义层 / Semantic Layer
 
 把「转化率」这类业务词，翻译成**唯一口径、可回归、可审计**的 SQL。
 
@@ -18,7 +18,7 @@ python -m semantic validate      # 校验字典自洽（不自洽会拒绝启动
 python -m semantic metrics       # 列出 20 个指标
 python -m semantic compile --json '{"metrics":["buy_pv_rate"],"dimensions":["dt"],"time_range":{"start":"2017-11-25","end":"2017-12-03"}}'
 
-python -m pytest semantic/tests -q       # 48 条：快照 + 错误码 + 硬约束
+python -m pytest semantic/tests -q       # 50 条：快照 + 错误码 + 硬约束
 python tools/verify_metrics.py           # 拿真实数据跑一遍，与手写黄金 SQL 逐行比对
 ```
 
