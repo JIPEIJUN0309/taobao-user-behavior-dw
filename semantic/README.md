@@ -3,7 +3,7 @@
 把「转化率」这类业务词，翻译成**唯一口径、可回归、可审计**的 SQL。
 
 - 设计文档：[`docs/semantic_layer_design.md`](../docs/semantic_layer_design.md)
-- 当前状态：D1–D4 已完成（字典 + 校验 + 编译器 + 快照测试 + CLI + 真数据核对），D5 起为双路由与 Agent
+- 当前状态：D1–D5 已完成（字典 + 校验 + 编译器 + 快照测试 + CLI + 双路由 + 真数据核对），D6 起为 Agent 三态闭环
 
 **核心约定：模型不写 SQL。** 自然语言只会被翻译成一个受限 DSL，SQL 由这里的模板确定性地编译出来。
 
@@ -21,6 +21,25 @@ python -m semantic compile --json '{"metrics":["buy_pv_rate"],"dimensions":["dt"
 python -m pytest semantic/tests -q       # 48 条：快照 + 错误码 + 硬约束
 python tools/verify_metrics.py           # 拿真实数据跑一遍，与手写黄金 SQL 逐行比对
 ```
+
+## 双路由（D5）
+
+| 路由 | 引擎 | 覆盖 | 延迟 |
+|---|---|---|---|
+| 快路径 | PostgreSQL | `dws_user_summary` / `dws_item_summary` / 两张 tier 维表，共 1026 万行 | 毫秒级 |
+| 明细 | Hive on Tez | `dwd_user_behavior` 9891 万行 | 20–40s |
+
+```bash
+# 1) 把服务层表同步到 PG（staging 表 + 事务换名，查询看不到半成品）
+python tools/sync_to_pg.py --dsn postgresql://dw:dwpass@localhost:55432/warehouse
+
+# 2) 核对双路由：同一指标在 PG 与 DuckDB 上必须给出同样的结果
+python tools/verify_metrics.py --pg-dsn postgresql://dw:dwpass@localhost:55432/warehouse
+```
+
+执行层在 `semantic/executor.py`：`DuckDBExecutor` / `PostgresExecutor`，只认 SQL，
+不认识指标——口径判定全部发生在编译期。跨引擎的三种坑已经写进测试：
+`LAG` 必须先于过滤、`DESC` 需显式 `NULLS LAST`、`numeric` 统一收敛成 `float`。
 
 ---
 
