@@ -15,9 +15,17 @@ Thumbs.db
 _run.sql
 /tmp/
 
+# 密钥：只留示例文件，真实 .env 永不入库 / secrets never committed
+.env
+.env.local
+!.env.example
+
+# Python 缓存
+__pycache__/
+*.pyc
+.pytest_cache/
+
 # Spark 实验产物 / Spark experiment artifacts
 *.parquet
 _skew_demo/
 spark-warehouse/
-__pycache__/
-*.pyc
