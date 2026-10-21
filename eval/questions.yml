@@ -1,4 +1,4 @@
-# 60 条评测集：A 直接可答 / B 多指标对比 / C 必须澄清 / D 必须拒答
+﻿# 60 条评测集：A 直接可答 / B 多指标对比 / C 必须澄清 / D 必须拒答
 # A、B 两类带 expected_dsl（黄金 DSL），C、D 两类带 expect: clarify|refuse
 # 跑法：python eval/run_l1.py（无需 API Key）；python eval/run_l2.py（需 Key）
 
@@ -27,7 +27,7 @@
 - {id: A22, cls: A, q: "各商品分层的加购率", dsl: {metrics: [item_cart_rate], dimensions: [item_tier]}}
 - {id: A23, cls: A, q: "行为总量是多少", dsl: {metrics: [behavior_cnt]}}
 - {id: A24, cls: A, q: "各类目的浏览次数", dsl: {metrics: [pv_cnt], dimensions: [category_id], limit: 20}}
-- {id: A25, cls: A, q: "12 月 2 日的购买次数", dsl: {metrics: [buy_cnt], time_range: {start: 2017-12-02, end: 2017-12-02}}}
+- {id: A25, cls: A, q: "12 月 2 日的购买次数", dsl: {metrics: [buy_cnt], time_range: {start: "2017-12-02", end: "2017-12-02"}}}
 
 # ---------- B 多指标与对比（15） ----------
 - {id: B01, cls: B, q: "每天的浏览次数和购买次数", dsl: {metrics: [pv_cnt, buy_cnt], dimensions: [dt]}}
@@ -40,7 +40,7 @@
 - {id: B08, cls: B, q: "各类目的加购率前 5", dsl: {metrics: [item_cart_rate], dimensions: [category_id], order_by: [{field: item_cart_rate, dir: desc}], limit: 5}}
 - {id: B09, cls: B, q: "每天的人均浏览次数", dsl: {metrics: [pv_per_user], dimensions: [dt]}}
 - {id: B10, cls: B, q: "各用户分层的购买次数与购买用户数", dsl: {metrics: [buy_cnt, buy_uv], dimensions: [user_tier]}}
-- {id: B11, cls: B, q: "11 月 25 日到 12 月 2 日的转化率走势", dsl: {metrics: [buy_pv_rate], dimensions: [dt], time_range: {start: 2017-11-25, end: 2017-12-02}, order_by: [{field: dt, dir: asc}]}}
+- {id: B11, cls: B, q: "11 月 25 日到 12 月 2 日的转化率走势", dsl: {metrics: [buy_pv_rate], dimensions: [dt], time_range: {start: "2017-11-25", end: "2017-12-02"}, order_by: [{field: dt, dir: asc}]}}
 - {id: B12, cls: B, q: "每天的行为总量", dsl: {metrics: [behavior_cnt], dimensions: [dt]}}
 - {id: B13, cls: B, q: "各用户分层的加购率", dsl: {metrics: [pv_to_cart_rate], dimensions: [user_tier]}}
 - {id: B14, cls: B, q: "各类目的浏览次数前 10", dsl: {metrics: [pv_cnt], dimensions: [category_id], order_by: [{field: pv_cnt, dir: desc}], limit: 10}}

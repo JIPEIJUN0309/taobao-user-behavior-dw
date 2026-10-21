@@ -29,3 +29,6 @@ __pycache__/
 *.parquet
 _skew_demo/
 spark-warehouse/
+
+# 评测产物（可重跑生成）/ generated evaluation artifacts
+eval/l2_results*.json

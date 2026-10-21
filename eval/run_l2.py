@@ -28,8 +28,23 @@ sys.path.insert(0, str(ROOT))
 from agent.config import ConfigError, load_llm_config  # noqa: E402
 from agent.llm import DeepSeekClient  # noqa: E402
 from agent.pipeline import Agent  # noqa: E402
+from agent.retriever import Retriever  # noqa: E402
 from semantic import Registry, compile_query  # noqa: E402
 from semantic.executor import DuckDBExecutor, PostgresExecutor  # noqa: E402
+
+
+def golden_reply(question: dict) -> dict:
+    """stub 模式下的标准答案：用它验证评测器本身，而不是验证模型。"""
+    if question["cls"] in ("A", "B"):
+        return {"type": "query", "dsl": question["dsl"]}
+    if question["cls"] == "C":
+        return {
+            "type": "clarify",
+            "question": "需要先确认口径或时间范围",
+            "options": ["次数口径", "用户口径"],
+            "reason": "E_AMBIGUOUS_METRIC",
+        }
+    return {"type": "refuse", "reason": "数据里没有这个字段", "closest": []}
 
 
 def _fingerprint(rows) -> str:
@@ -45,13 +60,15 @@ def _p95(values: list[float]) -> float:
     return ordered[idx]
 
 
-def run(limit: int | None, engine: str) -> int:
-    try:
-        config = load_llm_config()
-    except ConfigError as exc:
-        print(f"[配置缺失] {exc}", file=sys.stderr)
-        return 2
-    assert config is not None
+def run(limit: int | None, engine: str, stub: bool = False) -> int:
+    config = None
+    if not stub:
+        try:
+            config = load_llm_config()
+        except ConfigError as exc:
+            print(f"[配置缺失] {exc}", file=sys.stderr)
+            return 2
+        assert config is not None
 
     registry = Registry.load()
     questions = yaml.safe_load((HERE / "questions.yml").read_text(encoding="utf-8"))
@@ -69,7 +86,17 @@ def run(limit: int | None, engine: str) -> int:
         con = duckdb_connect()
         executor = DuckDBExecutor(con)
 
-    agent = Agent(registry, DeepSeekClient(config), executor=executor, engine=engine)
+    retriever = Retriever(registry)
+
+    def make_agent(question: dict) -> Agent:
+        """stub 模式下每题用只回答一次的假模型，验证评测器本身算得对。"""
+        if stub:
+            from agent.fake import ScriptedLLM
+
+            llm = ScriptedLLM([golden_reply(question)])
+        else:
+            llm = DeepSeekClient(config)
+        return Agent(registry, llm, retriever=retriever, executor=executor, engine=engine)
 
     details: list[dict] = []
     latencies: list[float] = []
@@ -85,7 +112,7 @@ def run(limit: int | None, engine: str) -> int:
             compiled = compile_query(q["dsl"], registry, engine=engine)
             expected = _fingerprint(con.execute(compiled.sql).fetchall() if con else executor.run(compiled.sql).rows)
 
-        answer = agent.answer(q["q"], execute=True)
+        answer = make_agent(q).answer(q["q"], execute=True)
         latencies.append(answer.elapsed_ms)
         tokens["prompt"] += answer.prompt_tokens
         tokens["completion"] += answer.completion_tokens
@@ -144,19 +171,25 @@ def run(limit: int | None, engine: str) -> int:
         "overall_ok": round(counters["ok"] / n, 4),
     }
 
-    (HERE / "l2_results.json").write_text(
-        json.dumps({"model": config.model, "metrics": metrics, "details": details}, ensure_ascii=False, indent=2),
+    model_name = "stub-golden" if stub else config.model  # type: ignore[union-attr]
+    suffix = "_stub" if stub else ""
+    (HERE / f"l2_results{suffix}.json").write_text(
+        json.dumps(
+            {"model": model_name, "metrics": metrics, "details": details},
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
-    _write_report(config.model, metrics, details, engine)
+    _write_report(model_name, metrics, details, engine, suffix=suffix)
 
     print()
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
-    print(f"\n报告：{(HERE / 'l2_report.md').relative_to(ROOT)}")
+    print(f"\n报告：{HERE / f'l2_report{suffix}.md'}")
     return 0 if metrics["overall_ok"] >= 0.85 else 1
 
 
-def _write_report(model: str, metrics: dict, details: list[dict], engine: str) -> None:
+def _write_report(model: str, metrics: dict, details: list[dict], engine: str, suffix: str = "") -> None:
     failures = [d for d in details if not d["ok"]]
     lines = [
         "# L2 评测报告（真模型）",
@@ -211,15 +244,20 @@ def _write_report(model: str, metrics: dict, details: list[dict], engine: str) -
             "",
         ]
     )
-    (HERE / "l2_report.md").write_text("\n".join(lines), encoding="utf-8")
+    (HERE / f"l2_report{suffix}.md").write_text("\n".join(lines), encoding="utf-8")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="L2 评测（真模型，需要 API Key）")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--engine", default="duckdb", choices=["duckdb", "pg"])
+    parser.add_argument(
+        "--stub",
+        action="store_true",
+        help="用标准答案替身跑一遍，验证评测器本身（不需要 Key）",
+    )
     args = parser.parse_args()
-    return run(args.limit, args.engine)
+    return run(args.limit, args.engine, stub=args.stub)
 
 
 if __name__ == "__main__":

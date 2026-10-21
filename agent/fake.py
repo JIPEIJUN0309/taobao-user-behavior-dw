@@ -33,7 +33,7 @@ class ScriptedLLM:
         if not self.replies:
             raise AssertionError("脚本里没有更多回复了，说明 pipeline 多调了一次模型")
         reply = self.replies.pop(0)
-        text = reply if isinstance(reply, str) else json.dumps(reply, ensure_ascii=False)
+        text = reply if isinstance(reply, str) else json.dumps(reply, ensure_ascii=False, default=str)
         return FakeResponse(text=text)
 
     @property
