@@ -6,3 +6,4 @@ pandas>=2.0
 duckdb>=1.0
 jieba>=0.42
 rank-bm25>=0.2
+streamlit>=1.40

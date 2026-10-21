@@ -41,6 +41,22 @@ python tools/verify_metrics.py --pg-dsn postgresql://dw:dwpass@localhost:55432/w
 不认识指标——口径判定全部发生在编译期。跨引擎的三种坑已经写进测试：
 `LAG` 必须先于过滤、`DESC` 需显式 `NULLS LAST`、`numeric` 统一收敛成 `float`。
 
+## 上层：Agent / 评测 / 演示页
+
+| 目录 | 作用 | 需要 Key |
+|---|---|---|
+| `agent/` | 检索 + 三态（query/clarify/refuse）+ 结构化修复 | 是（`python -m agent ask`） |
+| `eval/run_l1.py` | 黄金 DSL 回放，锁住 60 条问题的可编译性与结果指纹 | **否** |
+| `eval/run_l2.py` | 真模型六项指标 + 失败分析 → `l2_report.md` | 是 |
+| `app/streamlit_app.py` | 演示页：自然语言 / DSL 直编两个页签 | 自然语言页签才需要 |
+
+```bash
+python eval/run_l1.py                 # 40/40，约 70 秒
+streamlit run app/streamlit_app.py    # http://localhost:8501
+```
+
+Key 放 `.env`（已被 gitignore）或环境变量，先用 `python -m agent check` 验通。
+
 ---
 
 ## 三个字典文件

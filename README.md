@@ -133,6 +133,47 @@ Full write-up, including HLL's error characteristics and why salting doesn't app
 
 ---
 
+## Semantic Layer & Ask-the-DW Agent
+
+A metric layer sits on top of the warehouse, and **the model never writes SQL**:
+
+```
+NL question → metric retrieval (BM25) → constrained DSL → schema + semantic checks
+            → deterministic compile → SQL → PostgreSQL (ms fast path) / Hive (detail)
+```
+
+| Piece | Responsibility | Evidence |
+|---|---|---|
+| `semantic/` | 20 metrics · 6 dimensions · 3 datasets — one source of truth | 28 SQL snapshots, 51 tests |
+| `semantic/compiler.py` | DSL → SQL: partition pruning, ratio-from-one-dataset, declarative join paths, `dod`/`share` windows, cohort self-join | byte-identical output |
+| `agent/` | 3-state output (`query` / `clarify` / `refuse`), structured repair loop (≤2 retries), **no SQL template in the prompt** | 19 tests, offline via `FakeLLM` |
+| `eval/` | 60 questions: A25 answerable · B15 comparison · C10 must-clarify · D10 must-refuse | L1 **40/40** golden DSLs compile & execute |
+| `app/` | Streamlit page: question → editable DSL → collapsible SQL → result + metric footnote | `AppTest` smoke test |
+
+Why not let the model write SQL? Four failure modes it cannot fix by being bigger: metric-definition drift, join hallucinations, no audit trail, no regression. Constraining the model to a DSL moves the uncertainty into slot filling and keeps correctness in code.
+
+Two definition traps this dataset really has — both encoded in the dictionary and locked by tests:
+
+1. `dws_item_summary.user_cnt` is a **per-item distinct user count**; summing it across items double-counts users. So *category conversion rate* is defined as an **event-count ratio** (`SUM(buy)/SUM(pv)`), and the user-level version is a separate metric reading DWD.
+2. Event-level and user-level conversion differ by **30x** (2.26% vs 68.12%). Both are legitimate, so the bare word "转化率" must trigger a clarification, not a guess.
+
+```bash
+pip install -r requirements-semantic.txt
+
+python -m semantic validate                                 # dictionary self-check
+python -m semantic compile --json '{"metrics":["buy_pv_rate"],"dimensions":["dt"]}'
+python -m pytest semantic/tests agent/tests app/tests -q    # 70 tests
+python tools/verify_metrics.py --pg-dsn postgresql://...    # real data: 10/10, PG == DuckDB
+python eval/run_l1.py                                       # 40/40, no API key needed
+
+streamlit run app/streamlit_app.py                          # demo page
+python -m agent ask "每天的转化率"                            # needs DEEPSEEK_API_KEY in .env
+```
+
+Docs: [`docs/semantic_layer_design.md`](docs/semantic_layer_design.md) · [`semantic/README.md`](semantic/README.md)
+
+---
+
 ## Quick Start
 
 ### Prerequisites
@@ -190,6 +231,31 @@ taobao-user-behavior-dw/
 │       └── verify_all.sql               # Verification queries
 ├── spark/
 │   └── skew_experiment.py       # Controlled data-skew experiment (PySpark)
+├── semantic/                    # Metric layer: the only place that defines a metric
+│   ├── datasets.yml             #   tables, grain, declarative join paths
+│   ├── dimensions.yml           #   how metrics can be sliced (enums enumerated)
+│   ├── metrics.yml              #   20 metrics with business definitions + version
+│   ├── registry.py              #   load + C0–C5 consistency checks
+│   ├── validator.py             #   DSL validation (shape + semantics)
+│   ├── compiler.py              #   DSL → SQL (deterministic, snapshot-tested)
+│   ├── executor.py              #   DuckDB / PostgreSQL execution
+│   └── tests/                   #   28 SQL snapshots + 51 tests
+├── agent/                       # Ask-the-warehouse agent
+│   ├── retriever.py             #   BM25 over metric cards + ambiguity detection
+│   ├── prompt.py                #   three-state contract, no SQL templates
+│   ├── pipeline.py              #   query / clarify / refuse + repair loop
+│   ├── llm.py                   #   stdlib DeepSeek client
+│   └── fake.py                  #   scripted LLM for offline tests
+├── eval/
+│   ├── questions.yml            # 60 questions (A/B/C/D)
+│   ├── run_l1.py                # golden-DSL replay, no API key
+│   └── run_l2.py                # real-model metrics + report
+├── app/
+│   └── streamlit_app.py         # demo page
+├── tools/
+│   ├── verify_metrics.py        # real-data check vs hand-written gold SQL
+│   ├── sync_to_pg.py            # service layer → PostgreSQL (10.2M rows)
+│   └── duckdb_warehouse.py      # local warehouse stand-in over Parquet
 ├── scripts/
 │   ├── load_to_hdfs.sh / .cmd   # Load CSV into HDFS
 │   ├── run_all.sh / .cmd        # Run all layer SQL in order, stop on the first failure
@@ -197,7 +263,8 @@ taobao-user-behavior-dw/
 └── docs/
     ├── architecture.svg         # Architecture diagram
     ├── data_dictionary.md       # Full table schemas
-    └── data_skew.md             # Data-skew study write-up
+    ├── data_skew.md             # Data-skew study write-up
+    └── semantic_layer_design.md # Metric layer + agent design doc
 ```
 
 ---
