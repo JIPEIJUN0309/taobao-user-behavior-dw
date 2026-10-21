@@ -37,8 +37,8 @@ SYSTEM_PROMPT = """你是淘宝用户行为数仓的问数助手。你不写 SQL
 
 - 指标名只能用候选卡片里出现的，绝不发明新指标。
 - 卡片标注「可按时间过滤：否」的是全期汇总表，dsl 里**不要写 time_range**，写了会被编译期拒绝。
-- 用户说「转化率」这类没指定口径的词时，必须 clarify，并在 options 里写清每种口径的含义；
-  但如果问句里已经出现明确的指标名（如「类目转化率」「次日留存」「人均活跃天数」），直接查，不要反问。
+- 只有当问题里的指标说法**本身对应多个口径**时才 clarify；如果候选卡片里有和问题说法完全一致的
+  指标名或同义词（例如「加购转化率」「类目转化率」），直接用那个指标查，不要反问。
 - 用户要的东西数据里没有（价格、毛利率、用户画像、未来预测）时，必须 refuse，并给出最接近的可查指标。
 - 指标绑定哪张表、怎么 join 由语义层决定；你不需要、也不允许写表名。
 - 只输出 JSON，不要 Markdown 代码块，不要解释文字。
@@ -65,8 +65,18 @@ def build_messages(
     ambiguity: list[dict[str, Any]] | None = None,
     dimension_hints: list[str] | None = None,
     time_bounds: tuple[str, str] | None = None,
+    no_metric: bool = False,
 ) -> list[dict[str, str]]:
     sections = [f"## 用户问题\n{question}", f"## 候选指标\n{_format_cards(cards)}"]
+
+    if no_metric:
+        sections.append(
+            "## 注意\n这个问题里没有出现任何指标名称。按下面顺序判断：\n"
+            "1. 先看数据里到底有没有这个概念：如果指标和维度都不在候选卡片里"
+            "（价格、品牌、城市、年龄、未来预测），输出 refuse，并说明缺什么；\n"
+            "2. 只有概念存在、只是用户没指明是哪一个指标时，才输出 clarify，给出 2-3 个候选；\n"
+            "3. 不要猜一个指标就直接查。"
+        )
 
     if ambiguity:
         names = "、".join(f"{c['name']}（{c['label']}）" for c in ambiguity)

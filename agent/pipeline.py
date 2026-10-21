@@ -15,10 +15,18 @@ from semantic.errors import SemanticError
 from semantic.executor import Executor, QueryResult
 from semantic.registry import Registry
 
+from .clarify import ClarifyPolicy
 from .prompt import build_messages, build_repair_messages
 from .retriever import Retriever
 
 AnswerKind = Literal["query", "clarify", "refuse", "error"]
+
+# 明确的相对时间词：数据集是固定的历史区间，问了也答不了，直接拒答而不是反问。
+# 「最近」「近期」这类模糊词不在此列 —— 它们可以用默认窗口兜底。
+_RELATIVE_HARD = (
+    "昨天", "今天", "前天", "明天", "本周", "上周", "本月", "上月", "今年", "去年",
+    "当日", "实时",
+)
 
 
 class LLM(Protocol):
@@ -83,6 +91,7 @@ class Agent:
         self.registry = registry
         self.llm = llm
         self.retriever = retriever or Retriever(registry)
+        self.policy = ClarifyPolicy(registry)
         self.executor = executor
         self.max_repairs = max_repairs
         self.engine = engine
@@ -90,9 +99,41 @@ class Agent:
     # ---------------- 主流程 ----------------
     def answer(self, question: str, *, execute: bool = True) -> AgentAnswer:
         started = time.perf_counter()
+
+        # 数据覆盖范围之外的相对时间：反问没有意义，直接说清楚做不到
+        hit_relative = next((w for w in _RELATIVE_HARD if w in question), None)
+        if hit_relative:
+            bounds = None
+            for dataset in self.registry.datasets.values():
+                if dataset.time_bounds:
+                    bounds = dataset.time_bounds
+                    break
+            span = f"{bounds[0]} 至 {bounds[1]}" if bounds else "固定历史区间"
+            return AgentAnswer(
+                kind="refuse",
+                question=question,
+                refuse={
+                    "reason": f"数据只覆盖 {span}，「{hit_relative}」这类相对时间的范围在数据之外",
+                    "closest": [],
+                },
+                attempts=0,
+                elapsed_ms=(time.perf_counter() - started) * 1000,
+            )
+
+        # 确定性前置层：模型之前就能判定的歧义，直接反问，不花一次调用
+        hinted_dims = self.retriever.dimension_hints(question)
+        decision = self.policy.check(question, hinted_dims)
+        if decision is not None:
+            return AgentAnswer(
+                kind="clarify",
+                question=question,
+                clarify=decision.to_dict(),
+                attempts=0,
+                elapsed_ms=(time.perf_counter() - started) * 1000,
+            )
+
         cards = self.retriever.search(question)
         ambiguity = self.retriever.ambiguity(question)
-        hints = self.retriever.dimension_hints(question)
 
         bounds = None
         for dataset in self.registry.datasets.values():
@@ -105,8 +146,9 @@ class Agent:
             question,
             cards,
             ambiguity=ambiguity,
-            dimension_hints=hints,
+            dimension_hints=hinted_dims,
             time_bounds=bounds,
+            no_metric=not self.policy.has_metric_term(question),
         )
 
         prompt_tokens = completion_tokens = 0

@@ -180,7 +180,7 @@ metrics:
 
   - name: cart_to_buy_rate
     label: 加购购买转化率
-    synonyms: [加购购买率, 加购成交率]
+    synonyms: [加购购买率, 加购成交率, 加购到购买, 加购转购买]
     definition: 有购买行为的用户数 / 有加购行为的用户数（用户去重口径）
     kind: ratio
     dataset: dwd_user_behavior
@@ -253,7 +253,7 @@ metrics:
   # ---------------- 派生类 ----------------
   - name: behavior_share
     label: 行为结构占比
-    synonyms: [行为占比, 行为结构, 各行为占比]
+    synonyms: [行为占比, 行为结构, 各行为占比, 占比]
     definition: 某一行为类型的事件数 / 同时段全部行为事件数
     kind: derived
     op: share
