@@ -142,6 +142,8 @@ NL question → metric retrieval (BM25) → constrained DSL → schema + semanti
             → deterministic compile → SQL → PostgreSQL (ms fast path) / Hive (detail)
 ```
 
+![Ask-the-DW demo](docs/demo_home.png)
+
 | Piece | Responsibility | Evidence |
 |---|---|---|
 | `semantic/` | 20 metrics · 6 dimensions · 3 datasets — one source of truth | 30 SQL snapshots, 54 tests |

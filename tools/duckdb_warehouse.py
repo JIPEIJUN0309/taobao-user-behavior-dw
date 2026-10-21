@@ -10,6 +10,9 @@
 
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+
 import duckdb
 
 DEFAULT_PARQUET = "D:/data/taobao_data/dwd_user_behavior/*/*.parquet"
@@ -75,6 +78,11 @@ def connect(
     threads: int = 4,
 ) -> duckdb.DuckDBPyConnection:
     con = duckdb.connect(config={"memory_limit": memory_limit, "threads": threads})
+    # DuckDB 默认把溢写文件放在进程工作目录下的 .tmp/，一跑就是几个 GB。
+    # 指到系统临时目录，避免污染仓库（这个目录曾被误生成 1.9GB 并出现在 git status 里）。
+    spill_dir = Path(tempfile.gettempdir()) / "taobao_dw_duckdb"
+    spill_dir.mkdir(parents=True, exist_ok=True)
+    con.execute(f"SET temp_directory = '{spill_dir.as_posix()}'")
     con.execute("SET enable_progress_bar = false")
     con.execute(WAREHOUSE_SQL.format(parquet=parquet))
     return con

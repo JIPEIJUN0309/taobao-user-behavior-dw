@@ -1,4 +1,4 @@
-# æ•°æ®æ–‡ä»¶ä¸å…¥åº“ / do not commit data files
+ï»¿# æ•°æ®æ–‡ä»¶ä¸å…¥åº“ / do not commit data files
 *.csv
 *.tsv
 data/
@@ -30,5 +30,10 @@ __pycache__/
 _skew_demo/
 spark-warehouse/
 
-# ÆÀ²â²úÎï£¨¿ÉÖØÅÜÉú³É£©/ generated evaluation artifacts
+# ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï£¨ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É£ï¿½/ generated evaluation artifacts
 eval/l2_results*.json
+
+# DuckDB ï¿½ï¿½Ğ´ï¿½Ä¼ï¿½ï¿½ï¿½Ä¬ï¿½ï¿½ï¿½ï¿½ï¿½Ú¹ï¿½ï¿½ï¿½Ä¿Â¼ï¿½ï¿½ .tmp/ï¿½ï¿½ï¿½ï¿½ï¿½Ü¼ï¿½ï¿½ï¿½ GBï¿½ï¿½
+.tmp/
+*.duckdb
+*.duckdb.wal
