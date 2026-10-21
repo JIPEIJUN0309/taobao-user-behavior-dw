@@ -91,7 +91,7 @@ def _compile_simple(res: ResolvedQuery, registry: Registry) -> tuple[str, list[s
     order_by, extra = _order(registry, ds, res)
     sql = _assemble(
         ds=ds,
-        joins=_joins_for(ds, dims),
+        joins=_joins_for(ds, dims, res.dsl.filters),
         selects=selects,
         where=_where(registry, ds, res),
         group_by=dim_refs,
@@ -131,7 +131,7 @@ def _compile_derived(res: ResolvedQuery, registry: Registry) -> tuple[str, list[
     ds = res.dataset
     dims = res.dsl.dimensions
     dim_refs = [_dim_ref(registry, ds, d) for d in dims]
-    joins = _joins_for(ds, dims)
+    joins = _joins_for(ds, dims, res.dsl.filters)
     extra: list[str] = []
 
     inner_range = res.effective_range
@@ -198,9 +198,13 @@ def _compile_derived(res: ResolvedQuery, registry: Registry) -> tuple[str, list[
         return "\n".join(lines), extra
 
     if res.dsl.order_by:
-        ordered = [
-            _order_item(registry, ds, res, ob, prefix="s.") for ob in res.dsl.order_by
-        ]
+        ordered: list[str] = []
+        for ob in res.dsl.order_by:
+            if ob.field in res.metric_names:
+                # 这个别名就在本层 SELECT 里定义，不能带 s. 前缀，否则外层找不到列
+                ordered.append(f"{ob.field} {ob.dir.upper()} NULLS LAST")
+            else:
+                ordered.append(f"s.{ob.field} {ob.dir.upper()}")
         used = {ob.field for ob in res.dsl.order_by}
         ordered += [f"s.{d} ASC" for d in dims if d not in used]
         mid.append("ORDER BY " + ", ".join(ordered))
@@ -340,6 +344,11 @@ def _order(registry: Registry, ds: DatasetDef, res: ResolvedQuery) -> tuple[list
         note = f"未指定排序，默认按 {primary.name} 降序取前 {res.dsl.limit} 行"
         return parts, [note]
 
+    # 编译器永远会拼 LIMIT，所以只要有分组维度就必须给确定的顺序：
+    # 否则「截断后剩下哪几行」由引擎决定，换引擎或换线程数结果就变。
+    if dims:
+        return [f"{_dim_ref(registry, ds, dim)} ASC" for dim in dims], []
+
     return [], []
 
 
@@ -354,8 +363,11 @@ def _order_item(registry: Registry, ds: DatasetDef, res: ResolvedQuery, ob: Any,
     return f"{_dim_ref(registry, ds, ob.field)} {ob.dir.upper()}"
 
 
-def _joins_for(ds: DatasetDef, dims: list[str]) -> list[JoinDef]:
-    needed = {d for d in dims}
+def _joins_for(ds: DatasetDef, dims: list[str], filters: list[Any] | None = None) -> list[JoinDef]:
+    """join 不仅由 SELECT 的维度决定，过滤条件里用到维表列也必须 join。"""
+    needed = set(dims)
+    for flt in filters or []:
+        needed.add(getattr(flt, "field", flt))
     return [j for j in ds.joins if j.dimension in needed]
 
 

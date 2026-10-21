@@ -103,9 +103,28 @@ def test_limit_without_order_becomes_deterministic() -> None:
     assert any("默认按 pv_cnt 降序" in item for item in compiled.assumptions)
 
 
+def test_grouped_without_order_gets_dimension_order() -> None:
+    """编译器永远会拼 LIMIT，所以分组查询必须有确定顺序，否则截断结果不可复现。"""
+    compiled = compile_query(
+        {"metrics": ["pv_cnt"], "dimensions": ["category_id"]}, REGISTRY
+    )
+    assert "ORDER BY t.category_id ASC" in compiled.sql
+
+
 def test_no_limit_no_order_stays_unordered() -> None:
     sql = compile_query({"metrics": ["pv_cnt"]}, REGISTRY).sql
     assert "ORDER BY" not in sql
+
+
+def test_share_ordered_by_itself_uses_bare_alias() -> None:
+    """回归：占比指标按自身排序时，别名在本层，不能带 s. 前缀（否则外层找不到列）。"""
+    sql = compile_query(
+        {"metrics": ["behavior_share"], "dimensions": ["behavior_type"],
+         "order_by": [{"field": "behavior_share", "dir": "desc"}]},
+        REGISTRY,
+    ).sql
+    assert "ORDER BY behavior_share DESC" in sql
+    assert "s.behavior_share" not in sql
 
 
 def test_dod_filters_after_window() -> None:

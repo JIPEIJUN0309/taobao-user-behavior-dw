@@ -54,6 +54,7 @@ class DeepSeekClient:
         json_mode: bool = False,
         temperature: float | None = None,
         max_tokens: int = 1024,
+        retries: int = 1,
     ) -> LLMResponse:
         payload: dict[str, Any] = {
             "model": self.config.model,
@@ -76,14 +77,25 @@ class DeepSeekClient:
         )
 
         started = time.perf_counter()
-        try:
-            with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
-                data = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", "replace")
-            raise LLMError(f"HTTP {exc.code}", status=exc.code, body=body) from exc
-        except urllib.error.URLError as exc:
-            raise LLMError(f"网络错误: {exc.reason}") from exc
+        last_error: Exception | None = None
+        for attempt in range(retries + 1):
+            try:
+                with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", "replace")
+                # 4xx 是配置/请求问题，重试没有意义；5xx 和超时才值得再试一次
+                if exc.code < 500 or attempt >= retries:
+                    raise LLMError(f"HTTP {exc.code}", status=exc.code, body=body) from exc
+                last_error = exc
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                if attempt >= retries:
+                    raise LLMError(f"网络错误: {getattr(exc, 'reason', exc)}") from exc
+                last_error = exc
+            time.sleep(2.0)
+        else:  # pragma: no cover - 循环必然 break 或抛错
+            raise LLMError(f"调用失败: {last_error}")
         elapsed = (time.perf_counter() - started) * 1000
 
         usage = data.get("usage", {}) or {}

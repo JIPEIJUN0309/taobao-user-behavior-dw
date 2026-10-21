@@ -35,6 +35,19 @@ compile:
       dimensions: [dt, behavior_type]
       time_range: {start: 2017-11-25, end: 2017-12-03}
 
+  - name: filter_on_joined_dimension
+    dsl:
+      metrics: [buy_uv]
+      filters: [{field: user_tier, op: "=", value: high}]
+      time_range: {start: 2017-11-25, end: 2017-12-03}
+
+  - name: share_ordered_by_metric
+    dsl:
+      metrics: [behavior_share]
+      dimensions: [behavior_type]
+      order_by: [{field: behavior_share, dir: desc}]
+      time_range: {start: 2017-11-25, end: 2017-12-03}
+
   - name: dod_rate
     dsl:
       metrics: [day_over_day]

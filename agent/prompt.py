@@ -36,7 +36,9 @@ SYSTEM_PROMPT = """你是淘宝用户行为数仓的问数助手。你不写 SQL
 ## 规则
 
 - 指标名只能用候选卡片里出现的，绝不发明新指标。
-- 用户说"转化率"但没指定口径时，必须 clarify，并在 options 里写清每种口径的含义。
+- 卡片标注「可按时间过滤：否」的是全期汇总表，dsl 里**不要写 time_range**，写了会被编译期拒绝。
+- 用户说「转化率」这类没指定口径的词时，必须 clarify，并在 options 里写清每种口径的含义；
+  但如果问句里已经出现明确的指标名（如「类目转化率」「次日留存」「人均活跃天数」），直接查，不要反问。
 - 用户要的东西数据里没有（价格、毛利率、用户画像、未来预测）时，必须 refuse，并给出最接近的可查指标。
 - 指标绑定哪张表、怎么 join 由语义层决定；你不需要、也不允许写表名。
 - 只输出 JSON，不要 Markdown 代码块，不要解释文字。
@@ -47,9 +49,11 @@ def _format_cards(cards: list[dict[str, Any]]) -> str:
     lines = []
     for card in cards:
         dims = ", ".join(card["dimensions"]) or "无"
+        filterable = "是" if card.get("time_filterable", True) else "否（全期汇总）"
         lines.append(
             f"- {card['name']}（{card['label']}，单位 {card['unit']}）："
-            f"{card['definition']}；可用维度：{dims}；同义词：{'、'.join(card['synonyms']) or '无'}"
+            f"{card['definition']}；可用维度：{dims}；可按时间过滤：{filterable}；"
+            f"同义词：{'、'.join(card['synonyms']) or '无'}"
         )
     return "\n".join(lines)
 

@@ -23,9 +23,9 @@
 | D4 测试与 CLI | ✅ | 50 条语义层测试；`python -m semantic validate / metrics / compile` |
 | D5 双路由 | ✅ | 同步 4 张服务层表 1026 万行；PG 与 DuckDB 结果 10/10 一致 |
 | D6–D7 Agent | ✅ | 三态输出 + 结构化修复（≤2 次）；19 条离线测试 |
-| D8 评测集 | ✅ | 60 条（A25/B15/C10/D10）；L1 40/40 可编译可执行 |
+| D8 评测集 | ✅ | 60 条（A24/B13/C13/D10）；L1 37/37 可编译可执行 |
 | D9 演示页 | ✅ | Streamlit 单页 + `AppTest` 冒烟测试 |
-| D10 真模型评测 | ⏸ 待 Key | 需 `DEEPSEEK_API_KEY`，跑 `eval/run_l2.py` |
+| D10 真模型评测 | ✅ | `deepseek-chat` 跑 60 题：合法率 97.3% / 数值一致 97.3% / 澄清 69.2% / 拒答 90% / P95 5.4s |
 
 ---
 

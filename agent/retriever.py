@@ -53,6 +53,7 @@ class Retriever:
         return " ".join(p for p in parts if p)
 
     def card(self, metric: MetricDef) -> dict:
+        dataset = self.registry.dataset(metric.dataset)
         return {
             "name": metric.name,
             "label": metric.label,
@@ -61,6 +62,8 @@ class Retriever:
             "kind": metric.kind,
             "dimensions": metric.dimensions,
             "synonyms": metric.synonyms,
+            # 全期汇总表不接受时间过滤，模型必须知道这件事，否则会写出注定被拒的 DSL
+            "time_filterable": dataset.partition is not None,
         }
 
     # ---------------- 检索 ----------------

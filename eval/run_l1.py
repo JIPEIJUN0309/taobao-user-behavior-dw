@@ -70,6 +70,10 @@ def run(update: bool, only: str | None = None) -> int:
                 failures.append(f"{qid} 编译失败 {exc.code}: {exc.message}")
                 print(f"{qid:5s} {q['cls']:3s} {'-':>6s} {'-':>7s}  FAIL 编译 {exc.code}")
                 continue
+            except Exception as exc:  # 执行期报错也要计入失败，不能让整轮评测中断
+                failures.append(f"{qid} 执行失败 {type(exc).__name__}: {str(exc)[:120]}")
+                print(f"{qid:5s} {q['cls']:3s} {'-':>6s} {'-':>7s}  FAIL 执行 {type(exc).__name__}")
+                continue
             elapsed = (time.perf_counter() - t0) * 1000
             rec = {"rows": len(rows), "digest": digest(rows)}
             compiled_rows += 1
@@ -78,6 +82,9 @@ def run(update: bool, only: str | None = None) -> int:
             if not rows:
                 status = "FAIL 空结果"
                 failures.append(f"{qid} 结果为空：{q['q']}")
+            elif update:
+                if baseline and qid in baseline and baseline[qid] != rec:
+                    status = "OK 基线已更新"
             elif baseline and qid in baseline and baseline[qid] != rec:
                 status = "FAIL 与基线不一致"
                 failures.append(f"{qid} 结果漂移：{q['q']}（基线 {baseline[qid]}，现在 {rec}）")

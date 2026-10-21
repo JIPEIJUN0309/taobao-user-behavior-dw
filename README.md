@@ -144,7 +144,7 @@ NL question → metric retrieval (BM25) → constrained DSL → schema + semanti
 
 | Piece | Responsibility | Evidence |
 |---|---|---|
-| `semantic/` | 20 metrics · 6 dimensions · 3 datasets — one source of truth | 28 SQL snapshots, 50 tests |
+| `semantic/` | 20 metrics · 6 dimensions · 3 datasets — one source of truth | 30 SQL snapshots, 54 tests |
 | `semantic/compiler.py` | DSL → SQL: partition pruning, ratio-from-one-dataset, declarative join paths, `dod`/`share` windows, cohort self-join | byte-identical output |
 | `agent/` | 3-state output (`query` / `clarify` / `refuse`), structured repair loop (≤2 retries), **no SQL template in the prompt** | 19 tests, offline via `FakeLLM` |
 | `eval/` | 60 questions: A25 answerable · B15 comparison · C10 must-clarify · D10 must-refuse | L1 **40/40** golden DSLs compile & execute |
@@ -162,7 +162,7 @@ pip install -r requirements-semantic.txt
 
 python -m semantic validate                                 # dictionary self-check
 python -m semantic compile --json '{"metrics":["buy_pv_rate"],"dimensions":["dt"]}'
-python -m pytest semantic/tests agent/tests app/tests -q    # 70 tests
+python -m pytest semantic/tests agent/tests app/tests -q    # 74 tests
 python tools/verify_metrics.py --pg-dsn postgresql://...    # real data: 10/10, PG == DuckDB
 python eval/run_l1.py                                       # 40/40, no API key needed
 
@@ -239,7 +239,7 @@ taobao-user-behavior-dw/
 │   ├── validator.py             #   DSL validation (shape + semantics)
 │   ├── compiler.py              #   DSL → SQL (deterministic, snapshot-tested)
 │   ├── executor.py              #   DuckDB / PostgreSQL execution
-│   └── tests/                   #   28 SQL snapshots + 50 tests
+│   └── tests/                   #   30 SQL snapshots + 54 tests
 ├── agent/                       # Ask-the-warehouse agent
 │   ├── retriever.py             #   BM25 over metric cards + ambiguity detection
 │   ├── prompt.py                #   three-state contract, no SQL templates

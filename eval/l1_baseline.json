@@ -1,59 +1,58 @@
 {
   "A01": {
-    "rows": 7,
-    "digest": "bf9f39302167"
+    "rows": 9,
+    "digest": "39efca9ac245"
   },
   "A02": {
-    "rows": 7,
-    "digest": "729148353764"
+    "rows": 9,
+    "digest": "f51a7710d05a"
   },
   "A03": {
-    "rows": 7,
-    "digest": "074348b4f663"
+    "rows": 9,
+    "digest": "2245f26e823a"
   },
   "A04": {
     "rows": 1,
-    "digest": "61652bcc9a04"
+    "digest": "ca0d10f1b94c"
   },
   "A05": {
-    "rows": 7,
-    "digest": "a9dd1c1c6580"
+    "rows": 9,
+    "digest": "b4ec493c7439"
   },
   "A06": {
     "rows": 1,
-    "digest": "2d9349afd139"
+    "digest": "9eddc5e43c0d"
   },
   "A07": {
-    "rows": 3,
-    "digest": "377596acdacf"
+    "rows": 1,
+    "digest": "bd8c21703471"
   },
   "A08": {
-    "rows": 7,
-    "digest": "5d2ddabe7a77"
+    "rows": 9,
+    "digest": "f71f9c56b0c3"
   },
   "A09": {
-    "rows": 3,
-    "digest": "f5f86cb7df9b"
+    "expect": "clarify"
   },
   "A10": {
     "rows": 24,
-    "digest": "10b93076b7a5"
+    "digest": "d6b0bae76511"
   },
   "A11": {
-    "rows": 7,
-    "digest": "0cbd68b1ff9a"
+    "rows": 9,
+    "digest": "9d73eb2aa559"
   },
   "A12": {
     "rows": 1,
-    "digest": "2eb010ba7adb"
+    "digest": "7d8e885dca78"
   },
   "A13": {
     "rows": 1,
-    "digest": "69e2b563f51d"
+    "digest": "014d23c88829"
   },
   "A14": {
     "rows": 1,
-    "digest": "a613dba312ae"
+    "digest": "6dd75e1322f0"
   },
   "A15": {
     "rows": 1,
@@ -72,12 +71,12 @@
     "digest": "c33162659a39"
   },
   "A19": {
-    "rows": 7,
-    "digest": "087cc0b80561"
+    "rows": 9,
+    "digest": "7b069e9b391e"
   },
   "A20": {
-    "rows": 7,
-    "digest": "087cc0b80561"
+    "rows": 9,
+    "digest": "7b069e9b391e"
   },
   "A21": {
     "rows": 5,
@@ -89,75 +88,72 @@
   },
   "A23": {
     "rows": 1,
-    "digest": "520f34453896"
+    "digest": "96432ff376a8"
   },
   "A24": {
-    "rows": 20,
-    "digest": "b22ac7ef51fe"
+    "rows": 1000,
+    "digest": "b03c01fe426e"
   },
   "A25": {
     "rows": 1,
     "digest": "35d2a1bf089a"
   },
   "B01": {
-    "rows": 7,
-    "digest": "e687b08c6a6c"
+    "rows": 9,
+    "digest": "d1ba0ee92bcf"
   },
   "B02": {
-    "rows": 7,
-    "digest": "795207020f92"
+    "rows": 9,
+    "digest": "2b80f9c85f77"
   },
   "B03": {
     "rows": 4,
-    "digest": "e63001c9f7cd"
+    "digest": "f6d4aa05f69d"
   },
   "B04": {
-    "rows": 28,
-    "digest": "a36f67b734aa"
+    "rows": 36,
+    "digest": "dec84723750d"
   },
   "B05": {
-    "rows": 7,
-    "digest": "2385aee5dca9"
+    "rows": 9,
+    "digest": "b1565151beb9"
   },
   "B06": {
-    "rows": 3,
-    "digest": "f5f86cb7df9b"
+    "expect": "clarify"
   },
   "B07": {
     "rows": 3,
     "digest": "18ebaea0395a"
   },
   "B08": {
-    "rows": 5,
-    "digest": "6365651bcfae"
+    "expect": "clarify"
   },
   "B09": {
-    "rows": 7,
-    "digest": "8f4419959ae7"
+    "rows": 9,
+    "digest": "149d83220495"
   },
   "B10": {
     "rows": 3,
-    "digest": "ac56fb61e134"
+    "digest": "e52a27a66f9b"
   },
   "B11": {
-    "rows": 8,
-    "digest": "33ec993920f7"
+    "expect": "clarify"
   },
   "B12": {
-    "rows": 7,
-    "digest": "a59dea7a448c"
+    "rows": 9,
+    "digest": "807edb04b911"
   },
   "B13": {
     "rows": 3,
-    "digest": "d0f7773d645e"
+    "digest": "8c2dfc0cf4f1"
   },
   "B14": {
     "rows": 10,
-    "digest": "f91374bc2eb8"
+    "digest": "997ce0ab7013"
   },
   "B15": {
     "rows": 3,
-    "digest": "75c941d428b7"
+    "digest": "bc2cab52ebad"
   },
   "C01": {
     "expect": "clarify"
@@ -169,7 +165,8 @@
     "expect": "clarify"
   },
   "C04": {
-    "expect": "clarify"
+    "rows": 1,
+    "digest": "9d2d233cf55c"
   },
   "C05": {
     "expect": "clarify"

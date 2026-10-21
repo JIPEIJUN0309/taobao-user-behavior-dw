@@ -43,7 +43,7 @@ class LLMConfig:
     api_key: str
     base_url: str = DEFAULT_BASE_URL
     model: str = DEFAULT_MODEL
-    timeout: float = 60.0
+    timeout: float = 90.0
     temperature: float = 0.0
 
     @property
