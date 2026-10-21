@@ -94,6 +94,20 @@ def test_cohort_follows_engine_dialect() -> None:
     assert "to_char(t0.dt::date + 1" in pg_sql
 
 
+def test_limit_without_order_becomes_deterministic() -> None:
+    """有 limit 却没排序时，LIMIT 取到哪几行是随机的 —— 必须补一个确定的顺序。"""
+    compiled = compile_query(
+        {"metrics": ["pv_cnt"], "dimensions": ["category_id"], "limit": 20}, REGISTRY
+    )
+    assert "ORDER BY pv_cnt DESC NULLS LAST, t.category_id ASC" in compiled.sql
+    assert any("默认按 pv_cnt 降序" in item for item in compiled.assumptions)
+
+
+def test_no_limit_no_order_stays_unordered() -> None:
+    sql = compile_query({"metrics": ["pv_cnt"]}, REGISTRY).sql
+    assert "ORDER BY" not in sql
+
+
 def test_dod_filters_after_window() -> None:
     """回归：LAG 必须在过滤之内层计算，否则首日环比永远是 NULL。"""
     sql = compile_query(

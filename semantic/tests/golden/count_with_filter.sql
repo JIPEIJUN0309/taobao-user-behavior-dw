@@ -6,4 +6,5 @@ FROM taobao_dwd.dwd_user_behavior AS t
 WHERE t.dt BETWEEN '2017-11-25' AND '2017-12-03'
   AND t.behavior_type = 'pv'
 GROUP BY t.dt
+ORDER BY pv_cnt DESC NULLS LAST, t.dt ASC
 LIMIT 100

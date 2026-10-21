@@ -88,16 +88,17 @@ def _compile_simple(res: ResolvedQuery, registry: Registry) -> tuple[str, list[s
     selects = [f"{ref} AS {name}" for ref, name in zip(dim_refs, dims)]
     selects += [f"{_metric_expr(m)} AS {m.name}" for m in res.metrics]
 
+    order_by, extra = _order(registry, ds, res)
     sql = _assemble(
         ds=ds,
         joins=_joins_for(ds, dims),
         selects=selects,
         where=_where(registry, ds, res),
         group_by=dim_refs,
-        order_by=_order(registry, ds, res),
+        order_by=order_by or None,
         limit=res.dsl.limit,
     )
-    return sql, []
+    return sql, extra
 
 
 def _metric_expr(metric: MetricDef) -> str:
@@ -316,17 +317,30 @@ def _filter_sql(registry: Registry, ds: DatasetDef, field: str, op: str, value: 
     return f"{ref} {op} {_lit(value)}"
 
 
-def _order(registry: Registry, ds: DatasetDef, res: ResolvedQuery) -> list[str]:
-    parts = [_order_item(registry, ds, res, ob) for ob in res.dsl.order_by]
-    if not parts:
-        return parts
-    # 排序必须有 tiebreaker：只按指标降序取 TopN 时，并列值在两个引擎上
-    # 可能给出不同的行，结果就不可复现了。用分组维度兜底。
-    used = {ob.field for ob in res.dsl.order_by}
-    for dim in res.dsl.dimensions:
-        if dim not in used:
-            parts.append(f"{_dim_ref(registry, ds, dim)} ASC")
-    return parts
+def _order(registry: Registry, ds: DatasetDef, res: ResolvedQuery) -> tuple[list[str], list[str]]:
+    """返回 (排序子句, 需要披露的假设)。
+
+    两种情况要特殊处理：
+      1. 显式排序但只按指标排 -> 补分组维度做 tiebreaker，否则并列值取 TopN 不可复现
+      2. 有 limit 却没排序 -> 默认按第一个指标降序，否则 LIMIT 取到哪几行是随机的
+    """
+    from .validator import MAX_LIMIT
+
+    dims = res.dsl.dimensions
+    if res.dsl.order_by:
+        parts = [_order_item(registry, ds, res, ob) for ob in res.dsl.order_by]
+        used = {ob.field for ob in res.dsl.order_by}
+        parts += [f"{_dim_ref(registry, ds, dim)} ASC" for dim in dims if dim not in used]
+        return parts, []
+
+    if res.dsl.limit < MAX_LIMIT and res.metrics:
+        primary = res.metrics[0]
+        parts = [f"{primary.name} DESC NULLS LAST"]
+        parts += [f"{_dim_ref(registry, ds, dim)} ASC" for dim in dims]
+        note = f"未指定排序，默认按 {primary.name} 降序取前 {res.dsl.limit} 行"
+        return parts, [note]
+
+    return [], []
 
 
 def _order_item(registry: Registry, ds: DatasetDef, res: ResolvedQuery, ob: Any, prefix: str = "") -> str:
